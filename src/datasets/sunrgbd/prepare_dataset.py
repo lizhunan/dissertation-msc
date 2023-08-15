@@ -25,33 +25,29 @@ class Preparation:
         self.SUNRGBDtoolbox = os.path.join(os.path.dirname(__file__), 'SUNRGBDtoolbox.zip')
 
     def __call__(self):
-        self._download()
+        if self.args.download:
+            self._download()
         self._rgbd()
 
     def _download(self):
-        
-        if self.args.download:
-
-            # downloading SUNRGBD.zip and SUNRGBDtoolbox.zip
-            with DownloadProgressBar(unit='B', unit_scale=True,
-                                miniters=1, desc=RGBD_URL.split('/')[-1]) as t:
-                urllib.request.urlretrieve(RGBD_URL,
-                                        filename=self.SUNRGBD, 
-                                        reporthook=t.update_to)
-            with DownloadProgressBar(unit='B', unit_scale=True,
-                                miniters=1, desc=TOOLBOX_URL.split('/')[-1]) as t:
-                urllib.request.urlretrieve(TOOLBOX_URL,
-                                        filename=self.SUNRGBDtoolbox, 
-                                        reporthook=t.update_to)
+        with DownloadProgressBar(unit='B', unit_scale=True,
+                            miniters=1, desc=RGBD_URL.split('/')[-1]) as t:
+            urllib.request.urlretrieve(RGBD_URL,
+                                    filename=self.SUNRGBD, 
+                                    reporthook=t.update_to)
+        with DownloadProgressBar(unit='B', unit_scale=True,
+                            miniters=1, desc=TOOLBOX_URL.split('/')[-1]) as t:
+            urllib.request.urlretrieve(TOOLBOX_URL,
+                                    filename=self.SUNRGBDtoolbox, 
+                                    reporthook=t.update_to)
             
     def _rgbd(self):
         
         print('Extract labels from SUNRGBD toolbox')
         with ZipFile(self.SUNRGBD, 'r') as zip_ref:
-            zip_ref.extractall(path=os.path.join(self.output_path, 'SUNRGBD'))
+            zip_ref.extractall(path=os.path.join(self.output_path, ''))
         with ZipFile(self.SUNRGBDtoolbox, 'r') as zip_ref:
-            self.output_path = os.path.join(self.output_path, 'SUNRGBDtoolbox')
-            zip_ref.extractall(path=os.path.join(self.output_path, 'SUNRGBDtoolbox'))
+            zip_ref.extractall(path=os.path.join(self.output_path, ''))
 
         # remove downloaded file
         if self.SUNRGBD is not None:
