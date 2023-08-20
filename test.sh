@@ -6,4 +6,5 @@
 
 ####source /usr2/share/gpu.sbatch
 
-# torchrun download_data.py  --nyuv2-output-path datasets/nyuv2 --download True
+# torchrun src/models/convnext.py
+torchrun src/models/model.py
