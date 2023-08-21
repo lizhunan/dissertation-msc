@@ -20,6 +20,9 @@ class NYUv2(Dataset):
             self.img_dir_train = []
             self.depth_dir_train = []
             self.label_dir_train = []
+            self.img_dir_test = []
+            self.depth_dir_test = []
+            self.label_dir_test = []
             with open(tmp_file, 'r') as f:
                 train_imgs = f.read().splitlines()
                 for img in train_imgs:
@@ -30,9 +33,9 @@ class NYUv2(Dataset):
             with open(tmp_file, 'r') as f:
                 test_imgs = f.read().splitlines()
                 for img in test_imgs:
-                    self.img_dir_test = f'{data_dir}/test/rgb/{img}.png'
-                    self.depth_dir_test = f'{data_dir}/test/depth/{img}.png'
-                    self.label_dir_test = f'{data_dir}/test/labels_40/{img}.png'
+                    self.img_dir_test.append(f'{data_dir}/test/rgb/{img}.png')
+                    self.depth_dir_test.append(f'{data_dir}/test/depth/{img}.png')
+                    self.label_dir_test.append(f'{data_dir}/test/labels_40/{img}.png')
         except:
             raise IOError(f'{tmp_file} not found.')
         
@@ -55,6 +58,9 @@ class NYUv2(Dataset):
         label = imageio.imread(label_dir[index])
         depth = imageio.imread(depth_dir[index])
         rgb = imageio.imread(img_dir[index])
+        # label = label[np.newaxis, :, :]
+        depth = depth[np.newaxis, :, :]
+        rgb = np.transpose(rgb, (2, 0, 1))
         
         if self.transform:
             sample = self.transform(sample)

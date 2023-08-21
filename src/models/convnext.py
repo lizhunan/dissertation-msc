@@ -23,8 +23,8 @@ class Block(nn.Module):
     def __init__(self, dim, drop_path=0., layer_scale_init_value=1e-6):
         super().__init__()
 
-        _LOGGER('11111111111111111', 'Block args: ', 
-                 drop_path=drop_path, layer_scale_init_value=layer_scale_init_value)
+        # _LOGGER('11111111111111111', 'Block args: ', 
+        #          drop_path=drop_path, layer_scale_init_value=layer_scale_init_value)
         
         self.dwconv = nn.Conv2d(dim, dim, kernel_size=7, padding=3, groups=dim) # depthwise conv
         self.norm = LayerNorm(dim, eps=1e-6)
@@ -70,10 +70,10 @@ class ConvNeXt(nn.Module):
                  ):
         super().__init__()
 
-        _LOGGER('2222222222222222222222', 'ConvNeXt args: ', 
-                in_chans=in_chans, num_classes=num_classes, 
-                depths=depths, dims=dims, drop_path_rate=drop_path_rate, 
-                layer_scale_init_value=layer_scale_init_value, head_init_scale=head_init_scale)
+        # _LOGGER('2222222222222222222222', 'ConvNeXt args: ', 
+        #         in_chans=in_chans, num_classes=num_classes, 
+        #         depths=depths, dims=dims, drop_path_rate=drop_path_rate, 
+        #         layer_scale_init_value=layer_scale_init_value, head_init_scale=head_init_scale)
 
         self.down_4_channels_out = dims[0]
         self.down_8_channels_out = dims[1]
@@ -93,7 +93,7 @@ class ConvNeXt(nn.Module):
             )
             self.downsample_layers.append(downsample_layer)
 
-        _LOGGER('3333333333333333333', 'ConvNeXt downsample_layers: ', downsample_layers=self.downsample_layers)
+        # _LOGGER('3333333333333333333', 'ConvNeXt downsample_layers: ', downsample_layers=self.downsample_layers)
 
         self.stages = nn.ModuleList() # 4 feature resolution stages, each consisting of multiple residual blocks
         dp_rates=[x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))] 
@@ -106,7 +106,7 @@ class ConvNeXt(nn.Module):
             self.stages.append(stage)
             cur += depths[i]
 
-        _LOGGER('4444444444444444444', 'ConvNeXt stages: ', stages=self.stages)
+        # _LOGGER('4444444444444444444', 'ConvNeXt stages: ', stages=self.stages)
         
         self.norm = nn.LayerNorm(dims[-1], eps=1e-6) # final norm layer
         self.head = nn.Linear(dims[-1], num_classes)
@@ -124,7 +124,7 @@ class ConvNeXt(nn.Module):
         for i in range(4):
             x = self.downsample_layers[i](x)
             x = self.stages[i](x)
-            _LOGGER('555555555555555555555', 'ConvNeXt forward_features x shape', x_shapes=x.shape)
+            # _LOGGER('555555555555555555555', 'ConvNeXt forward_features x shape', x_shapes=x.shape)
         return self.norm(x.mean([-2, -1])) # global average pooling, (N, C, H, W) -> (N, C)
 
     def forward(self, x):
@@ -190,8 +190,8 @@ model_urls = {
     "convnext_base_22k": "https://dl.fbaipublicfiles.com/convnext/convnext_base_22k_224.pth"
 }
 
-def convnext_tiny(pretrained=False,in_22k=False, **kwargs):
-    model = ConvNeXt(depths=[3, 3, 9, 3], dims=[96, 192, 384, 768], **kwargs)
+def convnext_tiny(in_chans=3, pretrained=False,in_22k=False, **kwargs):
+    model = ConvNeXt(in_chans=in_chans, depths=[3, 3, 9, 3], dims=[96, 192, 384, 768], **kwargs)
     if pretrained:
         url = model_urls['convnext_tiny_22k'] if in_22k else model_urls['convnext_tiny_1k']
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu", check_hash=True)
@@ -206,32 +206,32 @@ def convnext_base(pretrained=False, in_22k=False, **kwargs):
         model.load_state_dict(checkpoint["model"])
     return model
 
-counter = 0
-def _LOGGER(tag, info, **kwargs):
-    global counter
-    counter += 1
-    print('===============================================================')
-    print(f'ConvNeXt Counter: {counter}')
-    print(f'TAG: {tag}')
-    print(f'INFO: {info}')
-    for key, value in kwargs.items():
-        print(f"kwarg: {key}: {value}")
-    print('===============================================================')
+# counter = 0
+# def _LOGGER(tag, info, **kwargs):
+#     global counter
+#     counter += 1
+#     print('===============================================================')
+#     print(f'ConvNeXt Counter: {counter}')
+#     print(f'TAG: {tag}')
+#     print(f'INFO: {info}')
+#     for key, value in kwargs.items():
+#         print(f"kwarg: {key}: {value}")
+#     print('===============================================================')
 
-if __name__ == '__main__':
-    _LOGGER('11111111111111111111111111', 'START')
-    model = convnext_tiny(pretrained=True)
+# if __name__ == '__main__':
+#     _LOGGER('11111111111111111111111111', 'START')
+#     model = convnext_tiny(pretrained=True)
 
-    model.eval()
-    print(model)
+#     model.eval()
+#     print(model)
 
-    image = torch.randn(1, 3, 480, 640)
+#     image = torch.randn(1, 3, 480, 640)
 
-    _LOGGER('', 'input shape', shape=image.shape)
+#     _LOGGER('', 'input shape', shape=image.shape)
     
-    with torch.no_grad():
-        outputs = model(image)
-        _LOGGER('oooooooooooooooooooooooout', 'output shape', shape=len(outputs))
-    for tensor in outputs:
-        _LOGGER('ttttttttttttttttttttttttttttttenor', 'output tensor\'s shape', shape=tensor.shape)
-        print(tensor.shape)
+#     with torch.no_grad():
+#         outputs = model(image)
+#         _LOGGER('oooooooooooooooooooooooout', 'output shape', shape=len(outputs))
+#     for tensor in outputs:
+#         _LOGGER('ttttttttttttttttttttttttttttttenor', 'output tensor\'s shape', shape=tensor.shape)
+#         print(tensor.shape)
