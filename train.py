@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
+from torch.optim.lr_scheduler import OneCycleLR
 from src.datasets.nyuv2.dataset import NYUv2
 import numpy as np
 import copy
@@ -46,10 +47,18 @@ def train():
     criterion_train = CrossEntropyLoss2d(weight=weighting_train)
     criterion_test = CrossEntropyLoss2d(weight=weighting_test)
     optimizer = optim.SGD(model.parameters(), momentum=0.9, lr=LR, weight_decay=0.0001)
+    lr_scheduler = OneCycleLR(optimizer, 
+                              max_lr=[i['lr'] for i in optimizer.param_groups],
+                              total_steps=epochs,
+                              div_factor=25,
+                              pct_start=0.1,
+                              anneal_strategy='cos',
+                              final_div_factor=1e4)
     confusion_matrices = ConfusionMatrixPytorch(40)
     miou = miou_pytorch(confusion_matrices)
     for epoch in range(epochs):
         torch.cuda.empty_cache()
+        lr_scheduler.step(epoch)
         epoch_start = time.time()
         train_loss = 0.0
         train_num = 0
@@ -74,7 +83,7 @@ def train():
             train_num += len(label)
 
             LOG_TRAIN(step+1, epoch+1, train_num, batch, len(train_loader.dataset), 
-                      loss,time.time() - train_start, optimizer.state_dict()['param_groups'][0]['lr'])
+                      loss,time.time() - train_start, lr_scheduler.get_lr())
         train_loss_all.append(train_loss / train_num)
         
         # validate model

@@ -10,7 +10,8 @@ def LOG_TRAIN(index, epoch, train_num, batch, dataset_size, loss, time_, learnin
     log = 'Train Epoch: {:>3}  Step: {:>3}  [{:>4}/{:>4} ({: 5.1f}%)]  Loss: {:0.6f}'.format(
         epoch, index, train_num, dataset_size, 100. * train_num/dataset_size, loss
     )
-    log += '  Learning Rate: {:>6}'.format(round(learning_rates, 10))
+    for i, lr in enumerate(learning_rates):
+        log += '  lr_{}: {:>6}'.format(i, round(lr, 10))
     log += '  [{:0.3f}s every {:>4} data]'.format(time_, batch)
 
     print(log, flush=True)
