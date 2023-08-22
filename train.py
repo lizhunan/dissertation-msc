@@ -9,9 +9,10 @@ import numpy as np
 import copy
 import time
 import pandas as pd
-from src.utils import LOG_TRAIN, LOG_VAL, Evaluator
+from src.utils import LOG_TRAIN, LOG_VAL, Evaluator, compute_class_weights
+from src.datasets import preprocessing
 
-epochs = 3
+epochs = 300
 batch = 4
 
 if torch.cuda.is_available():
@@ -22,8 +23,8 @@ else:
 def train():
 
     # loading dataset
-    training_dataset = NYUv2()
-    val_dataset = NYUv2(phase=False)
+    training_dataset = NYUv2(transform=preprocessing.get_preprocessor(phase='train'), phase=True)
+    val_dataset = NYUv2(transform=preprocessing.get_preprocessor(phase='test'), phase=False)
     train_loader = DataLoader(training_dataset, batch_size=batch, shuffle=True, num_workers=0, pin_memory=False)
     val_loader = DataLoader(val_dataset, batch_size=batch, shuffle=True, num_workers=0, pin_memory=False)
 
@@ -38,14 +39,17 @@ def train():
     best_loss = 1e10
     train_loss_all = []
     val_loss_all = []
-    since = time.time()
 
-    LR = 0.0003
-    criterion = CrossEntropyLoss2d()
-    optimizer = optim.Adam(model.parameters(), lr=LR,weight_decay=1e-4)
+    LR = 0.0001
+    weighting_train = compute_class_weights(path='/cs/home/psxzl18/dissertation-msc/src/datasets/nyuv2/weighting_median_frequency_1+40_train.pickle')
+    weighting_test = compute_class_weights(path='/cs/home/psxzl18/dissertation-msc/src/datasets/nyuv2/weighting_linear_1+40_test.pickle')
+    criterion_train = CrossEntropyLoss2d(weight=weighting_train)
+    criterion_test = CrossEntropyLoss2d(weight=weighting_test)
+    optimizer = optim.SGD(model.parameters(), momentum=0.9, lr=LR, weight_decay=0.0001)
     evaluator = Evaluator(40)
     for epoch in range(epochs):
         torch.cuda.empty_cache()
+        epoch_start = time.time()
         train_loss = 0.0
         train_num = 0
         val_loss = 0.0
@@ -58,14 +62,14 @@ def train():
         # train model
         model.train()
         for step, sample in enumerate(train_loader):
-            start = time.time()
+            train_start = time.time()
             optimizer.zero_grad()
             rgb_img = sample['rgb'].float().to(device)
             depth_img = sample['depth'].float().to(device)
             label = sample['label'].long().to(device)
             out = model(rgb_img, depth_img)
 
-            loss = criterion(out[0], label)
+            loss = criterion_train(out[0], label)
             loss.backward()
             optimizer.step()
             train_loss += loss.item() * len(label)
@@ -77,7 +81,8 @@ def train():
             evaluator.add_batch(label, pred)
             train_pa += evaluator.pixel_accuracy()
             train_miou += evaluator.mIou()
-            LOG_TRAIN(step+1, epoch+1, train_num, batch, len(train_loader.dataset), loss,time.time() - start, 0)
+            LOG_TRAIN(step+1, epoch+1, train_num, batch, len(train_loader.dataset), 
+                      loss,time.time() - train_start, optimizer.state_dict()['param_groups'][0]['lr'])
         train_loss_all.append(train_loss / train_num)
         
         # validate model
@@ -89,7 +94,7 @@ def train():
                 label = sample['label'].long().to(device)
                 out = model(rgb_img, depth_img)
 
-                loss = criterion(out, label)
+                loss = criterion_test(out, label)
                 val_loss += loss.item() * len(label)
                 val_num += len(label)
 
@@ -116,7 +121,7 @@ def train():
             best_model_wts = copy.deepcopy(model.state_dict())
         
         # durating for each epoch
-        time_use = time.time() - since
+        time_use = time.time() - epoch_start
         print('Train and val complete in {:.0f}m {:.0f}s'.format(time_use // 60, time_use %60))
         
     train_process = pd.DataFrame(
@@ -129,20 +134,18 @@ def train():
               'val_pa':val_pa})
     return best_model_wts, train_process
 
-med_frq = [0.382900, 0.452448, 0.637584, 0.377464, 0.585595,
-           0.479574, 0.781544, 0.982534, 1.017466, 0.624581,
-           2.589096, 0.980794, 0.920340, 0.667984, 1.172291,
-           0.862240, 0.921714, 2.154782, 1.187832, 1.178115,
-           1.848545, 1.428922, 2.849658, 0.771605, 1.656668,
-           4.483506, 2.209922, 1.120280, 2.790182, 0.706519,
-           3.994768, 2.220004, 0.972934, 1.481525, 5.342475,
-           0.750738, 4.040773, 0.972934, 1.481525, 5.342475]
-
 class CrossEntropyLoss2d(nn.Module):
-    def __init__(self, weight=med_frq):
+    def __init__(self, weight):
         super(CrossEntropyLoss2d, self).__init__()
-        self.ce_loss = nn.CrossEntropyLoss(torch.from_numpy(np.array(weight)).float().to(device),
-                                           size_average=False, reduce=False)
+        self.weight = torch.tensor(weight).to(device)
+        self.num_classes = len(self.weight) + 1  # +1 for void
+        if self.num_classes < 2**8:
+            self.dtype = torch.uint8
+        else:
+            self.dtype = torch.int16
+        self.ce_loss = nn.CrossEntropyLoss(torch.from_numpy(np.array(weight)).float(),
+                                           reduction='none', ignore_index=-1)
+        self.ce_loss.to(device)
 
     def forward(self, inputs_scales, targets_scales):
         mask = targets_scales > 0
@@ -151,7 +154,15 @@ class CrossEntropyLoss2d(nn.Module):
         inputs_scales = inputs_scales.to(device)
         targets_m = targets_m.to(device).long()
         loss_all = self.ce_loss(inputs_scales, targets_m)
-        return torch.sum(torch.masked_select(loss_all, mask)) / torch.sum(mask.float())
+
+        number_of_pixels_per_class = \
+                torch.bincount(targets_scales.flatten().type(self.dtype),
+                               minlength=self.num_classes)
+        divisor_weighted_pixel_sum = \
+                torch.sum(number_of_pixels_per_class[1:] * self.weight)   # without void
+
+        # return torch.sum(torch.masked_select(loss_all, mask)) / torch.sum(mask.float())
+        return torch.sum(loss_all) / divisor_weighted_pixel_sum
 
 if __name__ == '__main__':
     model, process = train()

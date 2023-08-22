@@ -1,12 +1,10 @@
 import imageio
 import numpy as np
-import os
 import cv2
-import torch
+import os
 from torch import from_numpy
-from torchvision.transforms import transforms, Compose
-from torch.utils.data import Dataset, DataLoader
-from torch.utils.data.dataset import ConcatDataset, Dataset
+from torch.utils.data import Dataset
+from torch.utils.data.dataset import Dataset
 
 class NYUv2(Dataset):
 
@@ -55,17 +53,27 @@ class NYUv2(Dataset):
             img_dir = self.img_dir_test
             depth_dir = self.depth_dir_test
             label_dir = self.label_dir_test
+        # rgb = self._load_img(img_dir[index])
+        # depth = self._load_img(depth_dir[index])
+        # label = self._load_img(label_dir[index])
         label = imageio.imread(label_dir[index])
         depth = imageio.imread(depth_dir[index])
         rgb = imageio.imread(img_dir[index])
-        # label = label[np.newaxis, :, :]
-        depth = depth[np.newaxis, :, :]
-        rgb = np.transpose(rgb, (2, 0, 1))
         
         if self.transform:
+            sample = {'rgb': rgb,
+                      'depth': depth,
+                      'label': label}
             sample = self.transform(sample)
+            return sample
         
         sample = {'rgb': rgb, 'depth': depth, 'label': label}
 
-        
         return sample
+    
+    def _load_img(self, path):
+        img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+        print(img.dtype)
+        if img.ndim == 3:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        return img

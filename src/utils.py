@@ -1,10 +1,12 @@
-
+import os
+import pickle
 import numpy as np
 
 def LOG_TRAIN(index, epoch, train_num, batch, dataset_size, loss, time_, learning_rates):
     log = 'Train Epoch: {:>3}  Step: {:>3}  [{:>4}/{:>4} ({: 5.1f}%)]  Loss: {:0.6f}'.format(
         epoch, index, train_num, dataset_size, 100. * train_num/dataset_size, loss
     )
+    log += '  Learning Rate: {:>6}'.format(round(learning_rates, 10))
     log += '  [{:0.3f}s every {:>4} data]'.format(time_, batch)
 
     print(log, flush=True)
@@ -49,3 +51,19 @@ class Evaluator:
 
     def reset(self):
         self.confusion_matrix = np.zeros((self.num_class,) * 2)
+
+def compute_class_weights(path, classes=40, phase='train', weight_mode='median_frequency'):
+
+    # weighting_path = os.path.join(
+    #     self.source_path, f'weighting_{weight_mode}_'
+    #                       f'1+{classes}')
+    # weighting_path += f'_{phase}.pickle'
+
+    weighting_path = path
+
+    if os.path.exists(weighting_path):
+        weighting = pickle.load(open(weighting_path, 'rb'))
+        print(f'Using {weighting_path} as class weighting')
+        return weighting
+    else:
+        raise FileNotFoundError(f'Weighting file not found. Got{weighting_path}')

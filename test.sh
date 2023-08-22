@@ -7,4 +7,5 @@
 ####source /usr2/share/gpu.sbatch
 
 # torchrun src/models/convnext.py
-torchrun src/models/model.py
+# torchrun src/models/model.py
+nvidia-smi
