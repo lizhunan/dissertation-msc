@@ -9,11 +9,11 @@ import numpy as np
 import copy
 import time
 import pandas as pd
-from src.utils import LOG_TRAIN, LOG_VAL, Evaluator, compute_class_weights
+from src.utils import LOG_TRAIN, LOG_VAL, compute_class_weights, ConfusionMatrixPytorch, miou_pytorch
 from src.datasets import preprocessing
 
 epochs = 300
-batch = 4
+batch = 2
 
 if torch.cuda.is_available():
     device = torch.device("cuda:0")
@@ -25,8 +25,8 @@ def train():
     # loading dataset
     training_dataset = NYUv2(transform=preprocessing.get_preprocessor(phase='train'), phase=True)
     val_dataset = NYUv2(transform=preprocessing.get_preprocessor(phase='test'), phase=False)
-    train_loader = DataLoader(training_dataset, batch_size=batch, shuffle=True, num_workers=0, pin_memory=False)
-    val_loader = DataLoader(val_dataset, batch_size=batch, shuffle=True, num_workers=0, pin_memory=False)
+    train_loader = DataLoader(training_dataset, batch_size=batch, shuffle=True, num_workers=0, pin_memory=False, drop_last=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch, shuffle=True, num_workers=0, pin_memory=False, drop_last=True)
 
     # loading model
     model = EISSegNet(num_classes=40, upsampling='learned-3x3-zeropad')
@@ -40,13 +40,14 @@ def train():
     train_loss_all = []
     val_loss_all = []
 
-    LR = 0.0001
+    LR = 0.001
     weighting_train = compute_class_weights(path='/cs/home/psxzl18/dissertation-msc/src/datasets/nyuv2/weighting_median_frequency_1+40_train.pickle')
     weighting_test = compute_class_weights(path='/cs/home/psxzl18/dissertation-msc/src/datasets/nyuv2/weighting_linear_1+40_test.pickle')
     criterion_train = CrossEntropyLoss2d(weight=weighting_train)
     criterion_test = CrossEntropyLoss2d(weight=weighting_test)
     optimizer = optim.SGD(model.parameters(), momentum=0.9, lr=LR, weight_decay=0.0001)
-    evaluator = Evaluator(40)
+    confusion_matrices = ConfusionMatrixPytorch(40)
+    miou = miou_pytorch(confusion_matrices)
     for epoch in range(epochs):
         torch.cuda.empty_cache()
         epoch_start = time.time()
@@ -54,9 +55,6 @@ def train():
         train_num = 0
         val_loss = 0.0
         val_num = 0
-        train_pa = 0.0
-        train_miou = 0.0
-        val_pa = 0.0
         val_miou = 0.0
 
         # train model
@@ -75,12 +73,6 @@ def train():
             train_loss += loss.item() * len(label)
             train_num += len(label)
 
-            out = torch.argmax(out[0], dim=1)
-            pred = out.cpu().numpy()
-            label = label.cpu().numpy()
-            evaluator.add_batch(label, pred)
-            train_pa += evaluator.pixel_accuracy()
-            train_miou += evaluator.mIou()
             LOG_TRAIN(step+1, epoch+1, train_num, batch, len(train_loader.dataset), 
                       loss,time.time() - train_start, optimizer.state_dict()['param_groups'][0]['lr'])
         train_loss_all.append(train_loss / train_num)
@@ -99,21 +91,18 @@ def train():
                 val_num += len(label)
 
                 out = torch.argmax(out, dim=1)
-                pred = out.cpu().numpy()
+                mask = label > 0
+                label = torch.masked_select(label, mask)
+                out = torch.masked_select(out, mask.to(device))
+                label -= 1
+                out = out.cpu().numpy()
                 label = label.cpu().numpy()
-                evaluator.add_batch(label, pred)
-                val_pa += evaluator.pixel_accuracy()
-                val_miou += evaluator.mIou()
+                confusion_matrices.update(torch.from_numpy(label), torch.from_numpy(out))
+
         val_loss_all.append(val_loss / val_num)
-        train_miou = train_miou/len(train_loader.dataset)
-        train_pa = train_pa/len(train_loader.dataset)
-        val_miou = val_miou/len(val_loader.dataset)
-        val_pa = val_pa/len(val_loader.dataset)
-        LOG_VAL(epoch + 1, 
-                train_loss_all[-1], val_loss_all[-1], 
-                (train_miou, train_pa),
-                (val_miou, val_pa))
-                
+        val_miou = miou.compute().data.numpy()
+        LOG_VAL(epoch + 1, train_loss_all[-1], val_loss_all[-1], val_miou)
+        confusion_matrices.reset()
 
         # best model
         if val_loss_all[-1] < best_loss:
@@ -128,10 +117,7 @@ def train():
         data={'epoch':range(epochs),
               'train_loss_all':train_loss_all,
               'val_loss_all':val_loss_all,
-              'train_miou':train_miou,
-              'train_pa':train_pa,
-              'val_miou':val_miou,
-              'val_pa':val_pa})
+              'val_miou':val_miou})
     return best_model_wts, train_process
 
 class CrossEntropyLoss2d(nn.Module):
@@ -148,9 +134,8 @@ class CrossEntropyLoss2d(nn.Module):
         self.ce_loss.to(device)
 
     def forward(self, inputs_scales, targets_scales):
-        mask = targets_scales > 0
         targets_m = targets_scales.clone()
-        targets_m[mask] -= 1
+        targets_m -= 1
         inputs_scales = inputs_scales.to(device)
         targets_m = targets_m.to(device).long()
         loss_all = self.ce_loss(inputs_scales, targets_m)
@@ -161,7 +146,6 @@ class CrossEntropyLoss2d(nn.Module):
         divisor_weighted_pixel_sum = \
                 torch.sum(number_of_pixels_per_class[1:] * self.weight)   # without void
 
-        # return torch.sum(torch.masked_select(loss_all, mask)) / torch.sum(mask.float())
         return torch.sum(loss_all) / divisor_weighted_pixel_sum
 
 if __name__ == '__main__':

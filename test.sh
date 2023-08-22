@@ -9,3 +9,4 @@
 # torchrun src/models/convnext.py
 # torchrun src/models/model.py
 nvidia-smi
+# fuser -v /dev/nvidia*

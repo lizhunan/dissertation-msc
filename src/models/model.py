@@ -12,10 +12,11 @@ class EISSegNet(nn.Module):
                  height=480,
                  width=640,
                  num_classes=37,
-                 rgb_encoder='convnext_t',
-                 depth_encoder='convnext_t',
+                 rgb_encoder='convnext_b',
+                 depth_encoder='convnext_b',
                  encoder_block='BasicBlock',
                  fusion_module='SE',
+                 fusion_input=[128, 128, 256, 512, 1024], # [96, 96, 192, 384, 768]
                  channels_decoder=[768, 384, 192],
                  nr_decoder_blocks=[3,3,3],
                  pretrained=True,
@@ -37,23 +38,23 @@ class EISSegNet(nn.Module):
         if depth_encoder == 'convnext_t':
             self.depth_encoder = convnext_tiny(in_chans=1)
         elif depth_encoder == 'convnext_b':
-            self.depth_encoder = convnext_base()
+            self.depth_encoder = convnext_base(in_chans=1)
         else:
             raise NotImplementedError(f'Only convnext_t or convnext_b are supported for depth encoder. Got {depth_encoder}')
         
         # fusion module
         if fusion_module == 'SE':
-            self.stem_fusion = SEFusion(96)
-            self.layer1_fusion = SEFusion(96)
-            self.layer2_fusion = SEFusion(192)
-            self.layer3_fusion = SEFusion(384)
-            self.layer4_fusion = SEFusion(768)
+            self.stem_fusion = SEFusion(fusion_input[0])
+            self.layer1_fusion = SEFusion(fusion_input[1])
+            self.layer2_fusion = SEFusion(fusion_input[2])
+            self.layer3_fusion = SEFusion(fusion_input[3])
+            self.layer4_fusion = SEFusion(fusion_input[4])
         elif fusion_module == 'ECA':
-            self.stem_fusion = ECAFusion(96)
-            self.layer1_fusion = ECAFusion(96)
-            self.layer2_fusion = ECAFusion(192)
-            self.layer3_fusion = ECAFusion(384)
-            self.layer4_fusion = ECAFusion(768)
+            self.stem_fusion = ECAFusion(fusion_input[0])
+            self.layer1_fusion = ECAFusion(fusion_input[1])
+            self.layer2_fusion = ECAFusion(fusion_input[2])
+            self.layer3_fusion = ECAFusion(fusion_input[3])
+            self.layer4_fusion = ECAFusion(fusion_input[4])
         else:
             raise NotImplementedError(f'Only SE or ECA are supported for fusion module. Got {fusion_module}')
 
@@ -155,10 +156,10 @@ class EISSegNet(nn.Module):
         #         rgb_shape=rgb.shape,depth_shape=depth.shape, fusion_shape=fusion.shape)
         
         # context module
-        # out = self.context_module(fusion)
+        out = self.context_module(fusion)
 
         # decoder
-        out = self.decoder(enc_outs=[fusion, skip3, skip2, skip1])
+        out = self.decoder(enc_outs=[out, skip3, skip2, skip1])
 
         return out
 
