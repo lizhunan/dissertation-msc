@@ -11,79 +11,112 @@ class EISSegNet(nn.Module):
     def __init__(self, 
                  height=480,
                  width=640,
-                 num_classes=37,
+                 dataset='nyuv2',
                  rgb_encoder='convnext_b',
                  depth_encoder='convnext_b',
-                 encoder_block='BasicBlock',
-                 fusion_module='SE',
-                 fusion_input=[128, 128, 256, 512, 1024], # [96, 96, 192, 384, 768]
-                 channels_decoder=[768, 384, 192],
-                 nr_decoder_blocks=[3,3,3],
+                 fusion_module='ECA',
                  pretrained=True,
-                 pretrained_dir='./trained_models',
                  upsampling='bilinear'):
         super(EISSegNet, self).__init__()
+        r"""EISSegNet.
 
-        self.activation = nn.ReLU(inplace=True)
+        Initialize the EISSegNet.
+
+        Args:
+            height: height of input image
+            width: width of input image
+            dataset: The dataset on which to train, 
+                     choices: sunrgbd, nyuv2, 
+                     default: nyuv2
+            rgb_encoder: encoder for rgb image, 
+                         choices: convnext_t, convnext_b, 
+                         default: convnext_b :see convnext.py
+            depth_encoder: encoder for depth image, 
+                           choices: convnext_t, convnext_b, 
+                           default: convnext_b :see convnext.py
+            fusion_module: fusion block in order to fuse the features of rgb and depth images, 
+                           choices: SEBlock, ECABlock :see fusion.py
+            pretrained: if using pretrained convnext model, 
+                        choices: True: using, False: not using, if using pretrained model, the model will be download at pytorch .cache dirtory :see convnet.py
+            upsampling: 
+        """
+        
+        # set the number of classes according to the dataset
+        if dataset == 'nyuv2':
+            self.num_classes = 40
+        elif dataset == 'sunrgbd':
+            self.num_classes = 37
+        else:
+            raise NotImplementedError(f'Only nyuv2 or sunrgbd are supported for rgb encoder. Got {dataset}')
 
         # rgb encoder
         if rgb_encoder == 'convnext_t':
-            self.rgb_encoder = convnext_tiny()
+            self.rgb_encoder = convnext_tiny(pretrained=pretrained)
+            self.fusion_input = [96, 96, 192, 384, 768]
+            self.channels_decoder = [192, 384, 768]
         elif rgb_encoder == 'convnext_b':
-            self.rgb_encoder = convnext_base()
+            self.rgb_encoder = convnext_base(pretrained=pretrained)
+            self.fusion_input = [128, 128, 256, 512, 1024]
+            self.channels_decoder = [256, 512, 1024]
         else:
             raise NotImplementedError(f'Only convnext_t or convnext_b are supported for rgb encoder. Got {rgb_encoder}')
         
         # depth encoder
         if depth_encoder == 'convnext_t':
-            self.depth_encoder = convnext_tiny(in_chans=1)
+            self.depth_encoder = convnext_tiny(in_chans=1, pretrained=pretrained)
+            self.fusion_input = [96, 96, 192, 384, 768]
+            self.channels_decoder = [192, 384, 768]
         elif depth_encoder == 'convnext_b':
-            self.depth_encoder = convnext_base(in_chans=1)
+            self.depth_encoder = convnext_base(in_chans=1, pretrained=pretrained)
+            self.fusion_input = [128, 128, 256, 512, 1024]
+            self.channels_decoder = [256, 512, 1024]
         else:
             raise NotImplementedError(f'Only convnext_t or convnext_b are supported for depth encoder. Got {depth_encoder}')
         
         # fusion module
         if fusion_module == 'SE':
-            self.stem_fusion = SEFusion(fusion_input[0])
-            self.layer1_fusion = SEFusion(fusion_input[1])
-            self.layer2_fusion = SEFusion(fusion_input[2])
-            self.layer3_fusion = SEFusion(fusion_input[3])
-            self.layer4_fusion = SEFusion(fusion_input[4])
+            self.stem_fusion = SEFusion(self.fusion_input[0])
+            self.layer1_fusion = SEFusion(self.fusion_input[1])
+            self.layer2_fusion = SEFusion(self.fusion_input[2])
+            self.layer3_fusion = SEFusion(self.fusion_input[3])
+            self.layer4_fusion = SEFusion(self.fusion_input[4])
         elif fusion_module == 'ECA':
-            self.stem_fusion = ECAFusion(fusion_input[0])
-            self.layer1_fusion = ECAFusion(fusion_input[1])
-            self.layer2_fusion = ECAFusion(fusion_input[2])
-            self.layer3_fusion = ECAFusion(fusion_input[3])
-            self.layer4_fusion = ECAFusion(fusion_input[4])
+            self.stem_fusion = ECAFusion(self.fusion_input[0])
+            self.layer1_fusion = ECAFusion(self.fusion_input[1])
+            self.layer2_fusion = ECAFusion(self.fusion_input[2])
+            self.layer3_fusion = ECAFusion(self.fusion_input[3])
+            self.layer4_fusion = ECAFusion(self.fusion_input[4])
         else:
             raise NotImplementedError(f'Only SE or ECA are supported for fusion module. Got {fusion_module}')
 
         # skip connection layers
         layers_skip1 = list()
-        if self.rgb_encoder.down_4_channels_out != channels_decoder[2]:
+        if self.rgb_encoder.down_4_channels_out != self.channels_decoder[2]:
             layers_skip1.append(SkipConnectBlock(
                 self.rgb_encoder.down_4_channels_out,
-                channels_decoder[2],
+                self.channels_decoder[2],
                 kernel_size=1))
         self.skip_layer1 = nn.Sequential(*layers_skip1)
 
         layers_skip2 = list()
-        if self.rgb_encoder.down_8_channels_out != channels_decoder[1]:
+        if self.rgb_encoder.down_8_channels_out != self.channels_decoder[1]:
             layers_skip2.append(SkipConnectBlock(
                 self.rgb_encoder.down_8_channels_out,
-                channels_decoder[1],
+                self.channels_decoder[1],
                 kernel_size=1))
         self.skip_layer2 = nn.Sequential(*layers_skip2)
 
         layers_skip3 = list()
-        if self.rgb_encoder.down_16_channels_out != channels_decoder[0]:
+        if self.rgb_encoder.down_16_channels_out != self.channels_decoder[0]:
             layers_skip3.append(SkipConnectBlock(
                 self.rgb_encoder.down_16_channels_out,
-                channels_decoder[0],
+                self.channels_decoder[0],
                 kernel_size=1))
         self.skip_layer3 = nn.Sequential(*layers_skip3)
 
         # context module
+        # ReLU is just for context module and decoder, as for encoder, using GELU
+        self.activation = nn.ReLU(inplace=True)
         if 'learned-3x3' in upsampling:
             upsampling_context_module = 'nearest'
         else:
@@ -92,68 +125,52 @@ class EISSegNet(nn.Module):
             get_context_module(
                 'ppm',
                 self.rgb_encoder.down_32_channels_out,
-                channels_decoder[0],
+                self.channels_decoder[0],
                 input_size=(height // 32, width // 32),
                 activation=self.activation,
                 upsampling_mode=upsampling_context_module
             )
         
         # decoder
-        
         self.decoder = Decoder(
             channels_in=channels_after_context_module,
-            channels_decoder=channels_decoder,
+            channels_decoder=self.channels_decoder,
             activation=self.activation,
-            nr_decoder_blocks=nr_decoder_blocks,
             encoder_decoder_fusion='add',
             upsampling_mode=upsampling,
-            num_classes=num_classes
+            num_classes=self.num_classes
         )
         
 
     def forward(self, rgb, depth):
-        # _LOGGER('####################', 'EISSegNet forward input shape',
-        #         rgb_shape=rgb.shape, depth_shape=depth.shape)
         
+        # stem
         rgb = self.rgb_encoder.forward_stem(rgb)
         depth = self.depth_encoder.forward_stem(depth)
         fusion = self.stem_fusion(rgb, depth)
-        # _LOGGER('####################', 'EISSegNet forward_stem shape',
-        #         rgb_shape=rgb.shape, depth_shape=depth.shape, fusion_shape=fusion.shape)
 
         # block 1
         rgb = self.rgb_encoder.forward_layer1(fusion)
         depth = self.depth_encoder.forward_layer1(depth)
         fusion = self.layer1_fusion(rgb, depth)
         skip1 = self.skip_layer1(fusion)
-        # _LOGGER('####################', 'EISSegNet forward_layer1 shape',
-        #         rgb_shape=rgb.shape, depth_shape=depth.shape, 
-        #         fusion_shape=fusion.shape, skip1=skip1.shape)
 
         # block 2
         rgb = self.rgb_encoder.forward_layer2(fusion)
         depth = self.depth_encoder.forward_layer2(depth)
         fusion = self.layer2_fusion(rgb, depth)
         skip2 = self.skip_layer2(fusion)
-        # _LOGGER('####################', 'EISSegNet forward_layer2 shape',
-        #         rgb_shape=rgb.shape,depth_shape=depth.shape, 
-        #         fusion_shape=fusion.shape, skip2=skip2.shape)
 
         # block 3
         rgb = self.rgb_encoder.forward_layer3(fusion)
         depth = self.depth_encoder.forward_layer3(depth)
         fusion = self.layer3_fusion(rgb, depth)
         skip3 = self.skip_layer3(fusion)
-        # _LOGGER('####################', 'EISSegNet forward_layer3 shape',
-        #         rgb_shape=rgb.shape,depth_shape=depth.shape, 
-        #         fusion_shape=fusion.shape, skip3=skip3.shape)
 
         # block 4
         rgb = self.rgb_encoder.forward_layer4(fusion)
         depth = self.depth_encoder.forward_layer4(depth)
         fusion = self.layer4_fusion(rgb, depth)
-        # _LOGGER('####################', 'EISSegNet forward_layer4 shape',
-        #         rgb_shape=rgb.shape,depth_shape=depth.shape, fusion_shape=fusion.shape)
         
         # context module
         out = self.context_module(fusion)
@@ -164,8 +181,25 @@ class EISSegNet(nn.Module):
         return out
 
 class SkipConnectBlock(nn.Sequential):
+    r"""SkipConnectBlock is used for recovering the lost of information details.
+    The encoder feature map is fused with the decoder results of the corresponding layer, 
+    so that the information details lost during encoding can be recovered.
+    """
     def __init__(self, channels_in, channels_out, kernel_size, dilation=1, stride=1):
         super(SkipConnectBlock, self).__init__()
+        r"""
+        Initialize SkipConnectBlock
+        channels_in: input channels depends on output channel of the previous layer, 
+                     layer 1: down_4_channels_out  
+                     layer 2: down_8_channels_out
+                     layer 2: down_16_channels_out
+        channels_out: output channels, self.channels_decoder depends on convnext_x 
+                      if using convnext_tiny self.channels_decoder = [192, 384, 768]
+                      if using convnext_b self.channels_decoder = [256, 512, 1024]
+        kernel_size: default=1
+        dilation: default=1
+        stride: default=1
+        """
         padding = kernel_size // 2 + dilation - 1
         self.add_module('conv', nn.Conv2d(channels_in, channels_out,
                                           kernel_size=kernel_size,
@@ -417,35 +451,3 @@ class NonBottleneck1D(nn.Module):
             return output
         # +input = identity (residual connection)
         return self.act(output + identity)
-
-# counter = 0
-# def _LOGGER(tag, info, **kwargs):
-#     global counter
-#     counter += 1
-#     print('===============================================================')
-#     print(f'EISSegNet Counter: {counter}')
-#     print(f'TAG: {tag}')
-#     print(f'INFO: {info}')
-#     for key, value in kwargs.items():
-#         print(f"kwarg: {key}: {value}")
-#     print('===============================================================')
-
-# if __name__ == '__main__':
-#     _LOGGER('11111111111111111111111111', 'START')
-#     model = EISSegNet()
-
-#     model.eval()
-#     print(model)
-
-#     rgb = torch.randn(1, 3, 480, 640)
-#     depth = torch.randn(1, 3, 480, 640)
-
-#     _LOGGER('', 'input rgb shape', shape=rgb.shape)
-#     _LOGGER('', 'input depth shape', shape=depth.shape)
-    
-#     with torch.no_grad():
-#         outputs = model(rgb, depth)
-#         _LOGGER('oooooooooooooooooooooooout', 'output shape', shape=len(outputs))
-#     for tensor in outputs:
-#         _LOGGER('ttttttttttttttttttttttttttttttenor', 'output tensor\'s shape', shape=tensor.shape)
-#         print(tensor.shape)

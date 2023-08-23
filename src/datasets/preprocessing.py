@@ -1,3 +1,8 @@
+"""
+This code is partially adapted from RedNet
+(https://github.com/JindongJiang/RedNet/blob/master/RedNet_data.py)
+"""
+
 import numpy as np
 import torch
 import cv2
@@ -6,39 +11,42 @@ import matplotlib.colors
 import torchvision
 import torchvision.transforms as transforms
 
-# note that mean and std differ depending on the selected depth_mode
-# however, the impact is marginal, therefore, we decided to use the
-# stats for refined depth for both cases
-# stats for raw: mean: 2769.0187903686697, std: 1350.4174149841133
-def get_preprocessor(height=480,
-                     width=640,
-                     depth_mean=2841.94941272766,
-                     depth_std=1417.2594281672277,
-                     depth_mode='refined',
-                     phase='train',
-                     train_random_rescale=(1.0, 1.4)):
+DEPTH_MEAN=2841.94941272766,
+DEPTH_STD=1417.2594281672277,
+DEPTH_MODE='refined'
+RESCALE=(1.0, 1.4)
 
+def get_preprocessor(height, width, phase='train'):
+    r"""Return a torchvision.transforms.Compose with transform list.
+
+    Preprocess datasets using torchvision.transforms.Compose.
+
+    Args:
+        height: Height of image.
+        width: Width of image.
+        phase: Dataset loading phase, train or test.
+    """
     if phase == 'train':
         transform_list = [
-            RandomRescale(train_random_rescale),
+            RandomRescale(RESCALE),
             RandomCrop(crop_height=height, crop_width=width),
             RandomHSV((0.9, 1.1),
                       (0.9, 1.1),
                       (25, 25)),
             RandomFlip(),
             ToTensor(),
-            Normalize(depth_mean=depth_mean,
-                      depth_std=depth_std,
-                      depth_mode=depth_mode),
+            Normalize(depth_mean=DEPTH_MEAN,
+                      depth_std=DEPTH_STD,
+                      depth_mode=DEPTH_MODE),
             MultiScaleLabel(downsampling_rates=[8, 16, 32])
         ]
     elif phase == 'test':
         transform_list = [
             Rescale(height=height, width=width),
             ToTensor(),
-            Normalize(depth_mean=depth_mean,
-                      depth_std=depth_std,
-                      depth_mode=depth_mode)
+            Normalize(depth_mean=DEPTH_MEAN,
+                      depth_std=DEPTH_STD,
+                      depth_mode=DEPTH_MODE)
         ]
     else:
         raise NotImplementedError(f'Only train and test dataset can be used. Got {phase}')
@@ -53,8 +61,10 @@ class Rescale:
     def __call__(self, sample):
         rgb, depth = sample['rgb'], sample['depth']
 
+        # cv2.INTER_LINEAR, resizing the image provides a smooth transformation effect
         rgb = cv2.resize(rgb, (self.width, self.height),
                            interpolation=cv2.INTER_LINEAR)
+        # cv2.INTER_NEAREST, Avoid introducing unrealistic depth values at object boundaries
         depth = cv2.resize(depth, (self.width, self.height),
                            interpolation=cv2.INTER_NEAREST)
 
@@ -72,7 +82,9 @@ class Rescale:
 class ToTensor:
     def __call__(self, sample):
         rgb, depth = sample['rgb'], sample['depth']
+        # [H, W, C] --> [C, H, W]
         rgb = rgb.transpose((2, 0, 1))
+        # [H, W] --> [1, H, W]
         depth = np.expand_dims(depth, 0).astype('float32')
 
         sample['rgb'] = torch.from_numpy(rgb).float()
@@ -86,7 +98,6 @@ class ToTensor:
     
 class Normalize:
     def __init__(self, depth_mean, depth_std, depth_mode='refined'):
-        assert depth_mode in ['refined', 'raw']
         self._depth_mode = depth_mode
         self._depth_mean = [depth_mean]
         self._depth_std = [depth_std]
@@ -96,17 +107,8 @@ class Normalize:
         rgb = rgb / 255
         rgb = torchvision.transforms.Normalize(
             mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])(rgb)
-        if self._depth_mode == 'raw':
-            depth_0 = depth == 0
-
-            depth = torchvision.transforms.Normalize(
-                mean=self._depth_mean, std=self._depth_std)(depth)
-
-            depth[depth_0] = 0
-
-        else:
-            depth = torchvision.transforms.Normalize(
-                mean=self._depth_mean, std=self._depth_std)(depth)
+        depth = torchvision.transforms.Normalize(
+            mean=self._depth_mean, std=self._depth_std)(depth)
 
         sample['rgb'] = rgb
         sample['depth'] = depth
@@ -126,8 +128,10 @@ class RandomRescale:
         target_height = int(round(target_scale * rgb.shape[0]))
         target_width = int(round(target_scale * rgb.shape[1]))
 
+        # cv2.INTER_LINEAR, resizing the image provides a smooth transformation effect
         rgb = cv2.resize(rgb, (target_width, target_height),
                            interpolation=cv2.INTER_LINEAR)
+        # cv2.INTER_NEAREST, Avoid introducing unrealistic depth values at object boundaries
         depth = cv2.resize(depth, (target_width, target_height),
                            interpolation=cv2.INTER_NEAREST)
         label = cv2.resize(label, (target_width, target_height),
@@ -151,7 +155,6 @@ class RandomCrop:
         h = rgb.shape[0]
         w = rgb.shape[1]
         if h <= self.crop_height or w <= self.crop_width:
-            # simply rescale instead of random crop as image is not large enough
             sample = self.rescale(sample)
         else:
             i = np.random.randint(0, h - self.crop_height)
@@ -223,7 +226,6 @@ class MultiScaleLabel:
 
         sample['label_down'] = dict()
 
-        # Nearest neighbor interpolation
         for rate in self.downsampling_rates:
             label_down = cv2.resize(label.numpy(), (w // rate, h // rate),
                                     interpolation=cv2.INTER_NEAREST)

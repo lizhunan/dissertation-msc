@@ -6,4 +6,4 @@
 
 ####source /usr2/share/gpu.sbatch
 
-torchrun train.py
+torchrun train.py --dataset_dir ~/dissertation-msc/datasets/nyuv2

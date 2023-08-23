@@ -1,4 +1,5 @@
 from src.models.model import EISSegNet
+import argparse
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -11,6 +12,7 @@ import time
 import pandas as pd
 from src.utils import LOG_TRAIN, LOG_VAL, compute_class_weights, ConfusionMatrixPytorch, miou_pytorch
 from src.datasets import preprocessing
+from src.args import SegmentationArgumentParser
 
 epochs = 300
 batch = 2
@@ -20,16 +22,20 @@ if torch.cuda.is_available():
 else:
     device = torch.device("cpu")
 
-def train():
+def train(args):
 
     # loading dataset
-    training_dataset = NYUv2(transform=preprocessing.get_preprocessor(phase='train'), phase=True)
-    val_dataset = NYUv2(transform=preprocessing.get_preprocessor(phase='test'), phase=False)
+    training_dataset = NYUv2(args.dataset_dir, 
+                             transform=preprocessing.get_preprocessor(height=args.height, width=args.width, phase='train'), 
+                             phase='train')
+    val_dataset = NYUv2(args.dataset_dir, 
+                        transform=preprocessing.get_preprocessor(height=args.height, width=args.width, phase='test'), 
+                        phase='test')
     train_loader = DataLoader(training_dataset, batch_size=batch, shuffle=True, num_workers=0, pin_memory=False, drop_last=True)
     val_loader = DataLoader(val_dataset, batch_size=batch, shuffle=True, num_workers=0, pin_memory=False, drop_last=True)
 
     # loading model
-    model = EISSegNet(num_classes=40, upsampling='learned-3x3-zeropad')
+    model = EISSegNet(upsampling='learned-3x3-zeropad')
 
     print('Device:', device)
     model.to(device)
@@ -157,5 +163,12 @@ class CrossEntropyLoss2d(nn.Module):
         return torch.sum(loss_all) / divisor_weighted_pixel_sum
 
 if __name__ == '__main__':
-    model, process = train()
+    parser = SegmentationArgumentParser(
+        description='Efficient Indoor Scene Segmentation Network (Training).',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.set_default_args()
+    args = parser.parse_args()
+
+    model, process = train(args)
     print(process)

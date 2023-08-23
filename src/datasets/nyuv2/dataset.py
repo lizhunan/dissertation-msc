@@ -1,14 +1,21 @@
 import imageio
-import numpy as np
-import cv2
 import os
-from torch import from_numpy
 from torch.utils.data import Dataset
 from torch.utils.data.dataset import Dataset
 
 class NYUv2(Dataset):
 
-    def __init__(self, transform=None, phase=True, data_dir=os.path.expanduser('~/dissertation-msc/datasets/nyuv2')):
+    def __init__(self, data_dir, transform=None, phase='train'):
+        r"""NYUv2 dataset.
+
+        Initialize the NYUv2 dataset.
+
+        Args:
+            data_dir: NYUv2 dataset directory path, 
+                      default is ../datasets/nyuv2.
+            phase: Dataset loading phase, train or test.
+            transform: transform dataset to tenser, refer to preprocessing :see proprocessing.py
+        """
         self.data_dir = data_dir
         self.phase = phase
         self.transform = transform
@@ -38,28 +45,30 @@ class NYUv2(Dataset):
             raise IOError(f'{tmp_file} not found.')
         
     def __len__(self):
-        if self.phase:
+        if self.phase == 'train':
             return len(self.img_dir_train)
-        else:
+        elif self.phase == 'test':
             return len(self.img_dir_test)
+        else:
+            raise NotImplementedError('Only train and test phase are supported.')
     
     def __getitem__(self, index):
 
-        if self.phase:
+        if self.phase == 'train':
             img_dir = self.img_dir_train
             depth_dir = self.depth_dir_train
             label_dir = self.label_dir_train
-        else:
+        elif self.phase == 'test':
             img_dir = self.img_dir_test
             depth_dir = self.depth_dir_test
             label_dir = self.label_dir_test
-        # rgb = self._load_img(img_dir[index])
-        # depth = self._load_img(depth_dir[index])
-        # label = self._load_img(label_dir[index])
+        else:
+            raise NotImplementedError('Only train and test phase are supported.')
         label = imageio.imread(label_dir[index])
         depth = imageio.imread(depth_dir[index])
         rgb = imageio.imread(img_dir[index])
         
+        # if transform is not None, preprocess the dataset
         if self.transform:
             sample = {'rgb': rgb,
                       'depth': depth,
@@ -70,10 +79,3 @@ class NYUv2(Dataset):
         sample = {'rgb': rgb, 'depth': depth, 'label': label}
 
         return sample
-    
-    def _load_img(self, path):
-        img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
-        print(img.dtype)
-        if img.ndim == 3:
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        return img
