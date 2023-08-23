@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-import torch.nn.functional as F
 from torch.optim.lr_scheduler import OneCycleLR
 from src.datasets.nyuv2.dataset import NYUv2
 import numpy as np
@@ -46,7 +45,7 @@ def train():
     weighting_test = compute_class_weights(path='/cs/home/psxzl18/dissertation-msc/src/datasets/nyuv2/weighting_linear_1+40_test.pickle')
     criterion_train = CrossEntropyLoss2d(weight=weighting_train)
     criterion_test = CrossEntropyLoss2d(weight=weighting_test)
-    optimizer = optim.SGD(model.parameters(), momentum=0.9, lr=LR, weight_decay=0.0001)
+    optimizer = optim.SGD(model.parameters(), momentum=0.9, lr=LR, weight_decay=0.0001, nesterov=True)
     lr_scheduler = OneCycleLR(optimizer, 
                               max_lr=[i['lr'] for i in optimizer.param_groups],
                               total_steps=epochs,
