@@ -1,21 +1,19 @@
 from src.models.model import EISSegNet
 import argparse
+import os
+import pickle
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import OneCycleLR
 from src.datasets.nyuv2.dataset import NYUv2
-import numpy as np
 import copy
 import time
 import pandas as pd
-from src.utils import LOG_TRAIN, LOG_VAL, compute_class_weights, ConfusionMatrixPytorch, miou_pytorch
+from src.utils import LOG_TRAIN, LOG_VAL
 from src.datasets import preprocessing
 from src.args import SegmentationArgumentParser
-
-epochs = 300
-batch = 2
+from src.evaluator import CrossEntropyLoss2d, ConfusionMatrix, miou_pytorch
 
 if torch.cuda.is_available():
     device = torch.device("cuda:0")
@@ -23,7 +21,7 @@ else:
     device = torch.device("cpu")
 
 def train(args):
-
+    
     # loading dataset
     training_dataset = NYUv2(args.dataset_dir, 
                              transform=preprocessing.get_preprocessor(height=args.height, width=args.width, phase='train'), 
@@ -31,40 +29,65 @@ def train(args):
     val_dataset = NYUv2(args.dataset_dir, 
                         transform=preprocessing.get_preprocessor(height=args.height, width=args.width, phase='test'), 
                         phase='test')
-    train_loader = DataLoader(training_dataset, batch_size=batch, shuffle=True, num_workers=0, pin_memory=False, drop_last=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch, shuffle=True, num_workers=0, pin_memory=False, drop_last=True)
+    train_loader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, pin_memory=False, drop_last=True)
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, pin_memory=False, drop_last=True)
 
     # loading model
     model = EISSegNet(upsampling='learned-3x3-zeropad')
-
-    print('Device:', device)
     model.to(device)
     print(model)
 
-    best_model_wts = copy.deepcopy(model.state_dict())
-    best_loss = 1e10
-    train_loss_all = []
-    val_loss_all = []
+    best_model_wts = copy.deepcopy(model.state_dict()) # store best model weighting
+    best_loss = 1e10 # best loss
+    train_loss_all = [] # store all of train phase loss
+    val_loss_all = [] # store all of validation phase loss
 
-    LR = 0.001
-    weighting_train = compute_class_weights(path='/cs/home/psxzl18/dissertation-msc/src/datasets/nyuv2/weighting_median_frequency_1+40_train.pickle')
-    weighting_test = compute_class_weights(path='/cs/home/psxzl18/dissertation-msc/src/datasets/nyuv2/weighting_linear_1+40_test.pickle')
-    criterion_train = CrossEntropyLoss2d(weight=weighting_train)
-    criterion_test = CrossEntropyLoss2d(weight=weighting_test)
-    optimizer = optim.SGD(model.parameters(), momentum=0.9, lr=LR, weight_decay=0.0001, nesterov=True)
+    # loading weighting
+    WEIGHTING_TRAIN_PATH = f'{os.path.dirname(os.path.abspath(__file__))}/src/datasets/{args.dataset}/weighting_train.pickle'
+    WEIGHTING_TEST_PATH = f'{os.path.dirname(os.path.abspath(__file__))}/src/datasets/{args.dataset}/weighting_test.pickle'
+    if os.path.exists(WEIGHTING_TRAIN_PATH):
+        weighting_train = pickle.load(open(WEIGHTING_TRAIN_PATH, 'rb'))
+    else:
+        raise FileNotFoundError(f'{WEIGHTING_TRAIN_PATH} is not found.')
+    if os.path.exists(WEIGHTING_TEST_PATH):
+        weighting_test = pickle.load(open(WEIGHTING_TEST_PATH, 'rb'))
+    else:
+        raise FileNotFoundError(f'{WEIGHTING_TEST_PATH} is not found.')
+    
+    # loading evaluator
+    criterion_train = CrossEntropyLoss2d(weight=weighting_train, device=device)
+    criterion_test = CrossEntropyLoss2d(weight=weighting_test, device=device)
+
+    # loading optimizer
+    if args.optimizer == 'SGD':
+        optimizer = optim.SGD(model.parameters(), momentum=args.momentum, lr=args.lr, weight_decay=args.weight_decay, nesterov=True)
+    elif args.optimizer == 'Adam':
+        optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    else:
+        NotImplementedError(f'Only SGD and Adam are supported. Got{args.optimizer}')
     lr_scheduler = OneCycleLR(optimizer, 
                               max_lr=[i['lr'] for i in optimizer.param_groups],
-                              total_steps=epochs,
+                              total_steps=args.epochs,
                               div_factor=25,
                               pct_start=0.1,
                               anneal_strategy='cos',
                               final_div_factor=1e4)
-    confusion_matrices = ConfusionMatrixPytorch(40)
+    # loading confusion matrix
+    # set the number of classes according to the dataset
+    if args.dataset == 'nyuv2':
+        num_classes = 40
+    elif args.dataset == 'sunrgbd':
+        num_classes = 37
+    else:
+        raise NotImplementedError(f'Only nyuv2 or sunrgbd are supported for rgb encoder. Got {args.dataset}')
+    confusion_matrices = ConfusionMatrix(num_classes)
     miou = miou_pytorch(confusion_matrices)
-    for epoch in range(epochs):
+
+    # start to train
+    for epoch in range(args.epochs):
         torch.cuda.empty_cache()
         lr_scheduler.step(epoch)
-        epoch_start = time.time()
+        epoch_start = time.time() # compute time of each epoch
         train_loss = 0.0
         train_num = 0
         val_loss = 0.0
@@ -74,7 +97,7 @@ def train(args):
         # train model
         model.train()
         for step, sample in enumerate(train_loader):
-            train_start = time.time()
+            train_start = time.time() # compute time of each batch size
             optimizer.zero_grad()
             rgb_img = sample['rgb'].float().to(device)
             depth_img = sample['depth'].float().to(device)
@@ -87,7 +110,7 @@ def train(args):
             train_loss += loss.item() * len(label)
             train_num += len(label)
 
-            LOG_TRAIN(step+1, epoch+1, train_num, batch, len(train_loader.dataset), 
+            LOG_TRAIN(step+1, epoch+1, train_num, args.batch_size, len(train_loader.dataset), 
                       loss,time.time() - train_start, lr_scheduler.get_lr())
         train_loss_all.append(train_loss / train_num)
         
@@ -128,39 +151,11 @@ def train(args):
         print('Train and val complete in {:.0f}m {:.0f}s'.format(time_use // 60, time_use %60))
         
     train_process = pd.DataFrame(
-        data={'epoch':range(epochs),
+        data={'epoch':range(args.epochs),
               'train_loss_all':train_loss_all,
               'val_loss_all':val_loss_all,
               'val_miou':val_miou})
     return best_model_wts, train_process
-
-class CrossEntropyLoss2d(nn.Module):
-    def __init__(self, weight):
-        super(CrossEntropyLoss2d, self).__init__()
-        self.weight = torch.tensor(weight).to(device)
-        self.num_classes = len(self.weight) + 1  # +1 for void
-        if self.num_classes < 2**8:
-            self.dtype = torch.uint8
-        else:
-            self.dtype = torch.int16
-        self.ce_loss = nn.CrossEntropyLoss(torch.from_numpy(np.array(weight)).float(),
-                                           reduction='none', ignore_index=-1)
-        self.ce_loss.to(device)
-
-    def forward(self, inputs_scales, targets_scales):
-        targets_m = targets_scales.clone()
-        targets_m -= 1
-        inputs_scales = inputs_scales.to(device)
-        targets_m = targets_m.to(device).long()
-        loss_all = self.ce_loss(inputs_scales, targets_m)
-
-        number_of_pixels_per_class = \
-                torch.bincount(targets_scales.flatten().type(self.dtype),
-                               minlength=self.num_classes)
-        divisor_weighted_pixel_sum = \
-                torch.sum(number_of_pixels_per_class[1:] * self.weight)   # without void
-
-        return torch.sum(loss_all) / divisor_weighted_pixel_sum
 
 if __name__ == '__main__':
     parser = SegmentationArgumentParser(

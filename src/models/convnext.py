@@ -97,28 +97,14 @@ class ConvNeXt(nn.Module):
             cur += depths[i]
         
         self.norm = nn.LayerNorm(dims[-1], eps=1e-6) # final norm layer
-        self.head = nn.Linear(dims[-1], num_classes)
 
         self.apply(self._init_weights)
-        self.head.weight.data.mul_(head_init_scale)
-        self.head.bias.data.mul_(head_init_scale)
 
     def _init_weights(self, m):
         if isinstance(m, (nn.Conv2d, nn.Linear)):
             trunc_normal_(m.weight, std=.02)
-            nn.init.constant_(m.bias, 0) # type: ignore
+            nn.init.constant_(m.bias, 0)
 
-    def forward_features(self, x):
-        for i in range(4):
-            x = self.downsample_layers[i](x)
-            x = self.stages[i](x)
-        return self.norm(x.mean([-2, -1])) # global average pooling, (N, C, H, W) -> (N, C)
-
-    def forward(self, x):
-        x = self.forward_features(x)
-        x = self.head(x)
-        return x
-    
     def forward_stem(self, x):
         x = self.downsample_layers[0](x)
         return x
@@ -194,5 +180,8 @@ def convnext_base(in_chans=3, pretrained=True, in_22k=False, **kwargs):
             # sum the weights of the first convolution
             checkpoint['model']['downsample_layers.0.0.weight'] = torch.sum(checkpoint['model']['downsample_layers.0.0.weight'],
                                                 axis=1, keepdim=True)
+        # pop task head of convnext
+        checkpoint['model'].pop('head.weight')
+        checkpoint['model'].pop('head.bias')
         model.load_state_dict(checkpoint["model"])
     return model

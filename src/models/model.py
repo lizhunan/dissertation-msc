@@ -115,8 +115,6 @@ class EISSegNet(nn.Module):
         self.skip_layer3 = nn.Sequential(*layers_skip3)
 
         # context module
-        # ReLU is just for context module and decoder, as for encoder, using GELU
-        self.activation = nn.ReLU(inplace=True)
         if 'learned-3x3' in upsampling:
             upsampling_context_module = 'nearest'
         else:
@@ -127,7 +125,7 @@ class EISSegNet(nn.Module):
                 self.rgb_encoder.down_32_channels_out,
                 self.channels_decoder[0],
                 input_size=(height // 32, width // 32),
-                activation=self.activation,
+                activation=nn.ReLU(inplace=True),
                 upsampling_mode=upsampling_context_module
             )
         
@@ -135,20 +133,18 @@ class EISSegNet(nn.Module):
         self.decoder = Decoder(
             channels_in=channels_after_context_module,
             channels_decoder=self.channels_decoder,
-            activation=self.activation,
-            encoder_decoder_fusion='add',
             upsampling_mode=upsampling,
             num_classes=self.num_classes
         )
         
 
     def forward(self, rgb, depth):
-        
+
         # stem
         rgb = self.rgb_encoder.forward_stem(rgb)
         depth = self.depth_encoder.forward_stem(depth)
         fusion = self.stem_fusion(rgb, depth)
-
+        
         # block 1
         rgb = self.rgb_encoder.forward_layer1(fusion)
         depth = self.depth_encoder.forward_layer1(depth)
@@ -189,16 +185,17 @@ class SkipConnectBlock(nn.Sequential):
         super(SkipConnectBlock, self).__init__()
         r"""
         Initialize SkipConnectBlock
-        channels_in: input channels depends on output channel of the previous layer, 
-                     layer 1: down_4_channels_out  
-                     layer 2: down_8_channels_out
-                     layer 2: down_16_channels_out
-        channels_out: output channels, self.channels_decoder depends on convnext_x 
-                      if using convnext_tiny self.channels_decoder = [192, 384, 768]
-                      if using convnext_b self.channels_decoder = [256, 512, 1024]
-        kernel_size: default=1
-        dilation: default=1
-        stride: default=1
+        Args:
+            channels_in: input channels depends on output channel of the previous layer, 
+                        layer 1: down_4_channels_out  
+                        layer 2: down_8_channels_out
+                        layer 2: down_16_channels_out
+            channels_out: output channels, self.channels_decoder depends on convnext_x 
+                        if using convnext_tiny self.channels_decoder = [192, 384, 768]
+                        if using convnext_b self.channels_decoder = [256, 512, 1024]
+            kernel_size: default=1
+            dilation: default=1
+            stride: default=1
         """
         padding = kernel_size // 2 + dilation - 1
         self.add_module('conv', nn.Conv2d(channels_in, channels_out,
@@ -211,22 +208,29 @@ class SkipConnectBlock(nn.Sequential):
         self.add_module('act', nn.ReLU(inplace=True))
 
 class Decoder(nn.Module):
+    f"""Decoder Module which is used for recovering resolution of feature map.
+    The decoder consists of 3 DecoderModule modules and 2 Upsample modules.
+    """
     def __init__(self,
                  channels_in,
                  channels_decoder,
-                 activation=nn.ReLU(inplace=True),
-                 nr_decoder_blocks=[3, 3, 3],
-                 encoder_decoder_fusion='add',
                  upsampling_mode='bilinear',
                  num_classes=37):
         super().__init__()
+        f"""
+        Initialize Decoder
+        Args:
+            channels_in: output of context modules
+            channels_decoder: output channels, self.channels_decoder depends on convnext_x 
+                              if using convnext_tiny self.channels_decoder = [192, 384, 768]
+                              if using convnext_b self.channels_decoder = [256, 512, 1024]
+            upsampling_mode: 
+            num_classes: the number of classes of dataset
+        """
 
         self.decoder_module_1 = DecoderModule(
             channels_in=channels_in,
             channels_dec=channels_decoder[0],
-            activation=activation,
-            nr_decoder_blocks=nr_decoder_blocks[0],
-            encoder_decoder_fusion=encoder_decoder_fusion,
             upsampling_mode=upsampling_mode,
             num_classes=num_classes
         )
@@ -234,9 +238,6 @@ class Decoder(nn.Module):
         self.decoder_module_2 = DecoderModule(
             channels_in=channels_decoder[0],
             channels_dec=channels_decoder[1],
-            activation=activation,
-            nr_decoder_blocks=nr_decoder_blocks[1],
-            encoder_decoder_fusion=encoder_decoder_fusion,
             upsampling_mode=upsampling_mode,
             num_classes=num_classes
         )
@@ -244,17 +245,12 @@ class Decoder(nn.Module):
         self.decoder_module_3 = DecoderModule(
             channels_in=channels_decoder[1],
             channels_dec=channels_decoder[2],
-            activation=activation,
-            nr_decoder_blocks=nr_decoder_blocks[2],
-            encoder_decoder_fusion=encoder_decoder_fusion,
             upsampling_mode=upsampling_mode,
             num_classes=num_classes
         )
 
-        self.conv_out = nn.Conv2d(channels_decoder[2],
-                                  num_classes, kernel_size=3, padding=1)
+        self.conv_out = nn.Conv2d(channels_decoder[2], num_classes, kernel_size=3, padding=1)
 
-         # upsample twice with factor 2
         self.upsample1 = Upsample(mode=upsampling_mode,
                                   channels=num_classes)
         self.upsample2 = Upsample(mode=upsampling_mode,
@@ -278,28 +274,35 @@ class Decoder(nn.Module):
 
 
 class DecoderModule(nn.Module):
+    r"""
+    Dncoding sub-module, which mainly consists of 3*3 ConvBNAct, 3 NonBottleneck1D blocks,
+    and a Upsample modules. This is the core module of the decoder.
+    """
     def __init__(self,
                  channels_in,
                  channels_dec,
                  activation=nn.ReLU(inplace=True),
-                 nr_decoder_blocks=1,
-                 encoder_decoder_fusion='add',
                  upsampling_mode='bilinear',
                  num_classes=37):
         super().__init__()
-
-        self.upsampling_mode = upsampling_mode
-        self.encoder_decoder_fusion = encoder_decoder_fusion
+        r"""
+        Initialize DecoderModule
+        Args:
+            channels_in: 
+            channels_dec: 
+            activation=nn.ReLU(inplace=True),
+            upsampling_mode='bilinear',
+            num_classes: the number of classes of dataset
+        """
 
         self.conv3x3 = ConvBNAct(channels_in, channels_dec, kernel_size=3,
                                  activation=activation)
         
         blocks = []
-        for _ in range(nr_decoder_blocks):
+        for _ in range(3):
             blocks.append(NonBottleneck1D(channels_dec,
                                           channels_dec,
-                                          activation=activation)
-                          )
+                                          activation=activation))
         self.decoder_blocks = nn.Sequential(*blocks)
 
         self.upsample = Upsample(mode=upsampling_mode,
@@ -321,8 +324,7 @@ class DecoderModule(nn.Module):
 
         out = self.upsample(out)
 
-        if self.encoder_decoder_fusion == 'add':
-            out += encoder_features
+        out += encoder_features
 
         return out, out_side
 

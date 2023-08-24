@@ -5,8 +5,6 @@ class SegmentationArgumentParser(argparse.ArgumentParser):
 
     def set_default_args(self):
         
-        # path
-
         # dataset
         self.add_argument('--dataset', default='nyuv2',
                           choices=['sunrgbd',
@@ -25,11 +23,11 @@ class SegmentationArgumentParser(argparse.ArgumentParser):
         
 
         # train
-        self.add_argument('--batch_size', type=int, default=8,
+        self.add_argument('--batch_size', type=int, default=2,
                           help='batch size for training')
         self.add_argument('--epochs', default=500, type=int, metavar='N',
                           help='number of total epochs to run')
-        self.add_argument('--lr', '--learning-rate', default=0.01,
+        self.add_argument('--lr', '--learning-rate', default=0.001,
                           type=float,
                           help='maximum learning rate. When using one_cycle '
                                'as --lr_scheduler lr will first increase to '

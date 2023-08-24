@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#SBATCH -c4 --mem=16g
-#SBATCH --gpus 1
+#SBATCH -c4 --mem=32g
+#SBATCH --gpus 2
 #SBATCH -p cs -q cspg
 
 ####source /usr2/share/gpu.sbatch
