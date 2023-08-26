@@ -7,6 +7,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import OneCycleLR
 from src.datasets.nyuv2.dataset import NYUv2
+from src.datasets.sunrgbd.dataset import SUNRGBD
 import copy
 import time
 import pandas as pd
@@ -22,13 +23,27 @@ else:
 
 def train(args):
     
-    # loading dataset
-    training_dataset = NYUv2(args.dataset_dir, 
+    # check dataset
+    if args.dataset == 'nyuv2':
+        training_dataset = NYUv2(args.dataset_dir, 
                              transform=preprocessing.get_preprocessor(height=args.height, width=args.width, phase='train'), 
                              phase='train')
-    val_dataset = NYUv2(args.dataset_dir, 
-                        transform=preprocessing.get_preprocessor(height=args.height, width=args.width, phase='test'), 
-                        phase='test')
+        val_dataset = NYUv2(args.dataset_dir, 
+                            transform=preprocessing.get_preprocessor(height=args.height, width=args.width, phase='test'), 
+                            phase='test')
+        num_classes = 40
+    elif args.dataset == 'sunrgbd':
+        training_dataset = SUNRGBD(args.dataset_dir, 
+                             transform=preprocessing.get_preprocessor(height=args.height, width=args.width, phase='train'), 
+                             phase='train')
+        val_dataset = SUNRGBD(args.dataset_dir, 
+                            transform=preprocessing.get_preprocessor(height=args.height, width=args.width, phase='test'), 
+                            phase='test')
+        num_classes = 37
+    else:
+        NotImplementedError(f'Only nyuv2 and sunrgbd are supported. Got{args.dataset}')
+    
+    # loading dataset
     train_loader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True, drop_last=True)
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True, drop_last=True)
 
@@ -44,6 +59,7 @@ def train(args):
     best_miou = 0.
     train_loss_all = [] # store all of train phase loss
     val_loss_all = [] # store all of validation phase loss
+    val_miou_all = [] # store all of validation phase miou
 
     # loading weighting
     WEIGHTING_TRAIN_PATH = f'{os.path.dirname(os.path.abspath(__file__))}/src/datasets/{args.dataset}/weighting_train.pickle'
@@ -75,14 +91,8 @@ def train(args):
                               pct_start=0.1,
                               anneal_strategy='cos',
                               final_div_factor=1e4)
+    
     # loading confusion matrix
-    # set the number of classes according to the dataset
-    if args.dataset == 'nyuv2':
-        num_classes = 40
-    elif args.dataset == 'sunrgbd':
-        num_classes = 37
-    else:
-        raise NotImplementedError(f'Only nyuv2 or sunrgbd are supported for rgb encoder. Got {args.dataset}')
     confusion_matrices = ConfusionMatrix(num_classes)
     miou = miou_pytorch(confusion_matrices)
 
@@ -141,8 +151,12 @@ def train(args):
 
         val_loss_all.append(val_loss / val_num)
         val_miou = miou.compute().data.numpy()
+        val_miou_all.append(val_miou_all)
         LOG_VAL(epoch + 1, train_loss_all[-1], val_loss_all[-1], val_miou)
         confusion_matrices.reset()
+
+        if epoch+1 % 100 == 0:
+            torch.save(model, f'{args.last_ckpt}/ckp_{args.dataset}_{epoch+1}.pth')
 
         # best model
         if val_miou > best_miou:
@@ -154,10 +168,10 @@ def train(args):
         print('Train and val complete in {:.0f}m {:.0f}s'.format(time_use // 60, time_use %60))
         
     train_process = pd.DataFrame(
-        data={'epoch':range(args.epochs),
+        data={'epoch':range(1, args.epochs),
               'train_loss_all':train_loss_all,
               'val_loss_all':val_loss_all,
-              'val_miou':val_miou})
+              'val_miou':val_miou_all})
     return best_model_wts, train_process
 
 if __name__ == '__main__':

@@ -8,6 +8,7 @@ import imageio
 import torchvision
 import matplotlib.pyplot as plt
 import time
+from src.evaluator import ConfusionMatrix, miou_pytorch
 
 if torch.cuda.is_available():
     device = torch.device("cuda:0")
@@ -26,11 +27,18 @@ def inference(args):
     model.to(device)
     if args.dataset == 'nyuv2':
         img_dir_test, depth_dir_test, label_dir_test = _load_nyuv2(args.dataset_dir)
+        num_classes = 40
+    elif args.dataset == 'sunrgbd':
+        num_classes = 37
     else:
         raise NotImplementedError(f'Only nyuv2 or sunrgbd are supported for rgb encoder. Got {args.dataset}')
     img_dir_test = img_dir_test[:args.num_samples]
     depth_dir_test = depth_dir_test[:args.num_samples]
     label_dir_test = label_dir_test[:args.num_samples]
+
+    # loading confusion matrix
+    confusion_matrices = ConfusionMatrix(num_classes)
+    miou = miou_pytorch(confusion_matrices)
 
     with torch.no_grad():
         img_dir_test 
@@ -47,17 +55,30 @@ def inference(args):
             depth.unsqueeze_(0)
             rgb = torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                                 std=[0.229, 0.224, 0.225])(rgb)
-            depth = torchvision.transforms.Normalize(mean=[19050],
-                                                std=[9650])(depth)
+            depth = torchvision.transforms.Normalize(mean=[2841.94941272766],
+                                                std=[1417.2594281672277])(depth)
             
             # to tensor
             rgb = rgb.to(device).unsqueeze_(0)
             depth = depth.to(device).unsqueeze_(0)
+            label_miou = torch.from_numpy(label_orig).float().to(device).unsqueeze_(0)
 
             start = time.time()
             pred = model(rgb, depth)
             end = time.time() - start 
             output = _color_label(torch.max(pred, 1)[1] + 1, NYUV2_LABELS)
+
+            # computing miou
+            pred_miou = torch.argmax(pred, dim=1)
+            mask = label_miou > 0
+            label_miou = torch.masked_select(label_miou.long(), mask)
+            pred_miou = torch.masked_select(pred_miou, mask.to(device))
+            label_miou -= 1
+            pred_miou = pred_miou.cpu().numpy()
+            label_miou = label_miou.cpu().numpy()
+            confusion_matrices.update(torch.from_numpy(label_miou), torch.from_numpy(pred_miou))
+            val_miou = miou.compute().data.numpy()
+            confusion_matrices.reset()
 
             # save result to args.results_dir
             fig, axs = plt.subplots(1, 4, figsize=( 16, 4))
@@ -70,9 +91,8 @@ def inference(args):
             axs[1].set_title('Depth Image')
             axs[2].set_title('Label Original')
             axs[3].set_title('Prediction')
-            fig.suptitle(f'Result on {args.dataset}(Duration: {end:0.4f}, FPS: {1/end:0.4f})', fontsize=16)
+            fig.suptitle(f'Result on {args.dataset}(mIoU: {val_miou:0.4f}, Duration: {end:0.4f}s, FPS: {1/end:0.4f})', fontsize=16)
             plt.savefig(os.path.join(args.results_dir, f'result_{args.dataset}_{round(start)}.png'), dpi=150)
-
 
 NYUV2_LABELS = [(0, 0, 0),
                  (148, 65, 137), (255, 116, 69), (86, 156, 137),
