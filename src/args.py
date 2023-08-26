@@ -23,9 +23,11 @@ class SegmentationArgumentParser(argparse.ArgumentParser):
         
 
         # train
-        self.add_argument('--batch_size', type=int, default=2,
+        self.add_argument('--last_ckpt', default='./trained_models', type=str, metavar='PATH',
+                          help='path to latest checkpoint')
+        self.add_argument('--batch_size', type=int, default=4,
                           help='batch size for training')
-        self.add_argument('--epochs', default=500, type=int, metavar='N',
+        self.add_argument('--epochs', default=3, type=int, metavar='N',
                           help='number of total epochs to run')
         self.add_argument('--lr', '--learning-rate', default=0.001,
                           type=float,
@@ -38,6 +40,15 @@ class SegmentationArgumentParser(argparse.ArgumentParser):
                           help='momentum')
         self.add_argument('--optimizer', type=str, default='SGD',
                           choices=['SGD', 'Adam'])
+        
+        # inference
+        self.add_argument('--results_dir',
+                          default='./results')
+        self.add_argument('--ckpt_path',
+                          default=None)
+        self.add_argument('--num_samples', type=int,
+                          default=1,
+                          help='the amount of inferences.')
         
         # others
         

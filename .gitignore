@@ -165,3 +165,4 @@ datasets/nyuv2
 datasets/rgbd
 datasets/sunrgbd
 *.out
+results/*.png

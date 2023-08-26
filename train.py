@@ -29,16 +29,19 @@ def train(args):
     val_dataset = NYUv2(args.dataset_dir, 
                         transform=preprocessing.get_preprocessor(height=args.height, width=args.width, phase='test'), 
                         phase='test')
-    train_loader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, pin_memory=False, drop_last=True)
-    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, pin_memory=False, drop_last=True)
+    train_loader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True, drop_last=True)
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True, drop_last=True)
 
     # loading model
     model = EISSegNet(upsampling='learned-3x3-zeropad')
+    if torch.cuda.device_count() > 1:
+        print("Let's use", torch.cuda.device_count(), "GPUs!")
+        model = torch.nn.DataParallel(model)
     model.to(device)
     print(model)
 
     best_model_wts = copy.deepcopy(model.state_dict()) # store best model weighting
-    best_loss = 1e10 # best loss
+    best_miou = 0.
     train_loss_all = [] # store all of train phase loss
     val_loss_all = [] # store all of validation phase loss
 
@@ -142,9 +145,9 @@ def train(args):
         confusion_matrices.reset()
 
         # best model
-        if val_loss_all[-1] < best_loss:
-            best_loss = val_loss_all[-1]
-            best_model_wts = copy.deepcopy(model.state_dict())
+        if val_miou > best_miou:
+            best_miou = val_miou
+            best_model_wts = copy.deepcopy(model.module.state_dict())
         
         # durating for each epoch
         time_use = time.time() - epoch_start
@@ -166,4 +169,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     model, process = train(args)
+    
+    # save best model
+    torch.save(model, f'{args.last_ckpt}/ckp_{args.dataset}_bst.pth')
     print(process)
