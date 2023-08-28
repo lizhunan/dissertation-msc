@@ -42,7 +42,8 @@ def inference(args):
 
     with torch.no_grad():
         img_dir_test 
-        for rgb_path, depth_path, label_path in zip(img_dir_test, depth_dir_test, label_dir_test):
+        mark = round(time.time())
+        for i, (rgb_path, depth_path, label_path) in enumerate(zip(img_dir_test, depth_dir_test, label_dir_test)):
             rgb_img = imageio.imread(rgb_path)
             depth_img = imageio.imread(depth_path)
             label_orig = imageio.imread(label_path)
@@ -92,7 +93,7 @@ def inference(args):
             axs[2].set_title('Label Original')
             axs[3].set_title('Prediction')
             fig.suptitle(f'Result on {args.dataset}(mIoU: {val_miou:0.4f}, Duration: {end:0.4f}s, FPS: {1/end:0.4f})', fontsize=16)
-            plt.savefig(os.path.join(args.results_dir, f'result_{args.dataset}_{round(start)}.png'), dpi=150)
+            plt.savefig(os.path.join(args.results_dir, f'result_{args.dataset}_{mark}_{i+1}.png'), dpi=150)
 
 NYUV2_LABELS = [(0, 0, 0),
                  (148, 65, 137), (255, 116, 69), (86, 156, 137),

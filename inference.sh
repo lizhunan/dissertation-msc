@@ -6,7 +6,7 @@
 
 ####source /usr2/share/gpu.sbatch
 
-torchrun inference.py --ckpt_path ~/dissertation-msc/trained_models/ckp_nyuv2_bst.pth \
+torchrun inference.py --ckpt_path ~/dissertation-msc/trained_models/ckp_nyuv2_bst_0.pth \
                       --dataset_dir ~/dissertation-msc/datasets/nyuv2 \
                       --dataset nyuv2 \
-                      --num_samples 3
+                      --num_samples 10

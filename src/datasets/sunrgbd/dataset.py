@@ -22,23 +22,44 @@ class SUNRGBD(Dataset):
 
         try:
             tmp_file = os.path.join(self.data_dir, 'train_rgb.txt')
+            self.img_dir_train = []
+            self.img_dir_test = []
             with open(tmp_file, 'r') as f:
-                self.img_dir_train = f.read().splitlines()
-            tmp_file = os.path.join(self.data_dir, 'train_depth.txt')
-            with open(tmp_file, 'r') as f:
-                self.depth_dir_train = f.read().splitlines()
-            tmp_file = os.path.join(self.data_dir, 'train_label.txt')
-            with open(tmp_file, 'r') as f:
-                self.label_dir_train = f.read().splitlines()
+                train_imgs = f.read().splitlines()
+                for img in train_imgs:
+                    self.img_dir_train.append(f'{data_dir}/{img}')
             tmp_file = os.path.join(self.data_dir, 'test_rgb.txt')
             with open(tmp_file, 'r') as f:
-                self.img_dir_test = f.read().splitlines()
+                test_imgs = f.read().splitlines()
+                for img in test_imgs:
+                    self.img_dir_test.append(f'{data_dir}/{img}')
+
+            tmp_file = os.path.join(self.data_dir, 'train_depth.txt')
+            self.depth_dir_train = []
+            self.depth_dir_test = []
+            with open(tmp_file, 'r') as f:
+                train_imgs = f.read().splitlines()
+                for img in train_imgs:
+                    self.depth_dir_train.append(f'{data_dir}/{img}')
             tmp_file = os.path.join(self.data_dir, 'test_depth.txt')
             with open(tmp_file, 'r') as f:
-                self.depth_dir_test = f.read().splitlines()
+                test_imgs = f.read().splitlines()
+                for img in test_imgs:
+                    self.depth_dir_test.append(f'{data_dir}/{img}')
+
+            tmp_file = os.path.join(self.data_dir, 'train_label.txt')
+            self.label_dir_train = []
+            self.label_dir_test = []
+            with open(tmp_file, 'r') as f:
+                train_imgs = f.read().splitlines()
+                for img in train_imgs:
+                    self.label_dir_train.append(f'{data_dir}/{img}')
             tmp_file = os.path.join(self.data_dir, 'test_label.txt')
             with open(tmp_file, 'r') as f:
-                self.label_dir_test = f.read().splitlines()
+                test_imgs = f.read().splitlines()
+                for img in test_imgs:
+                    self.label_dir_test.append(f'{data_dir}/{img}')
+
         except:
             raise IOError(f'{tmp_file} not found.')
 
@@ -61,7 +82,7 @@ class SUNRGBD(Dataset):
             label_dir = self.label_dir_test
         else:
             raise NotImplementedError('Only train and test phase are supported.')
-        label = imageio.imread(label_dir[index])
+        label = np.load(label_dir[index])
         depth = imageio.imread(depth_dir[index])
         rgb = imageio.imread(img_dir[index])
         # if transform is not None, preprocess the dataset

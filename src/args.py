@@ -27,7 +27,7 @@ class SegmentationArgumentParser(argparse.ArgumentParser):
                           help='path to latest checkpoint')
         self.add_argument('--batch_size', type=int, default=4,
                           help='batch size for training')
-        self.add_argument('--epochs', default=500, type=int, metavar='N',
+        self.add_argument('--epochs', default=5, type=int, metavar='N',
                           help='number of total epochs to run')
         self.add_argument('--lr', '--learning-rate', default=0.001,
                           type=float,

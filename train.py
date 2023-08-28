@@ -48,7 +48,7 @@ def train(args):
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True, drop_last=True)
 
     # loading model
-    model = EISSegNet(upsampling='learned-3x3-zeropad')
+    model = EISSegNet(dataset=args.dataset, upsampling='learned-3x3-zeropad')
     if torch.cuda.device_count() > 1:
         print("Let's use", torch.cuda.device_count(), "GPUs!")
         model = torch.nn.DataParallel(model)
@@ -106,6 +106,7 @@ def train(args):
         val_loss = 0.0
         val_num = 0
         val_miou = 0.0
+        best_epoch = 0
 
         # train model
         model.train()
@@ -151,16 +152,18 @@ def train(args):
 
         val_loss_all.append(val_loss / val_num)
         val_miou = miou.compute().data.numpy()
-        val_miou_all.append(val_miou_all)
+        val_miou_all.append(val_miou)
         LOG_VAL(epoch + 1, train_loss_all[-1], val_loss_all[-1], val_miou)
         confusion_matrices.reset()
 
-        if epoch+1 % 100 == 0:
-            torch.save(model, f'{args.last_ckpt}/ckp_{args.dataset}_{epoch+1}.pth')
+        if ((epoch+1) % 50) == 0:
+            print(f'{args.last_ckpt}/ckp_{args.dataset}_{epoch+1}.pth has been saved.')
+            torch.save(model.module.state_dict(), f'{args.last_ckpt}/ckp_{args.dataset}_{epoch+1}.pth')
 
         # best model
         if val_miou > best_miou:
             best_miou = val_miou
+            best_epoch = epoch+1
             best_model_wts = copy.deepcopy(model.module.state_dict())
         
         # durating for each epoch
@@ -168,11 +171,11 @@ def train(args):
         print('Train and val complete in {:.0f}m {:.0f}s'.format(time_use // 60, time_use %60))
         
     train_process = pd.DataFrame(
-        data={'epoch':range(1, args.epochs),
+        data={'epoch':range(1, args.epochs+1),
               'train_loss_all':train_loss_all,
               'val_loss_all':val_loss_all,
               'val_miou':val_miou_all})
-    return best_model_wts, train_process
+    return best_model_wts, best_epoch, train_process
 
 if __name__ == '__main__':
     parser = SegmentationArgumentParser(
@@ -182,8 +185,8 @@ if __name__ == '__main__':
     parser.set_default_args()
     args = parser.parse_args()
 
-    model, process = train(args)
+    model, best_epoch, process = train(args)
     
     # save best model
-    torch.save(model, f'{args.last_ckpt}/ckp_{args.dataset}_bst.pth')
+    torch.save(model, f'{args.last_ckpt}/ckp_{args.dataset}_bst_{best_epoch}.pth')
     print(process)
