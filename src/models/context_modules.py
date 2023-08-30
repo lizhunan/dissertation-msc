@@ -71,13 +71,3 @@ class ConvBNAct(nn.Sequential):
                                           stride=stride))
         self.add_module('bn', nn.BatchNorm2d(channels_out))
         self.add_module('act', activation)
-
-
-class ConvBN(nn.Sequential):
-    def __init__(self, channels_in, channels_out, kernel_size):
-        super(ConvBN, self).__init__()
-        self.add_module('conv', nn.Conv2d(channels_in, channels_out,
-                                          kernel_size=kernel_size,
-                                          padding=kernel_size // 2,
-                                          bias=False))
-        self.add_module('bn', nn.BatchNorm2d(channels_out))

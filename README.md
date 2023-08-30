@@ -1,6 +1,6 @@
 # dissertation-msc
 
-Efficient Indoor Scene Segmantation Network(EISSegNet)
+Efficient Indoor Scene Segmentation Network(EISSegNet)
 
 <p align="lift">
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-4caf50.svg" alt="License"></a>
