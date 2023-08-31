@@ -13,6 +13,10 @@ Efficient Indoor Scene Segmentation Network(EISSegNet)
 
 ## Training
 
+based on nyuv2: https://drive.google.com/file/d/1OZBNWF0eNuXoqxMgA4lMYLKq00vxCx--/view?usp=drive_link
+
+based on sunrgb-d: https://drive.google.com/file/d/1JiZ-iIvCo_whEnWVAPIvNwRnzuFI_OM-/view?usp=drive_link
+
 ## Evaluation
 
 ## Inference
