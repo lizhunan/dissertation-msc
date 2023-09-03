@@ -6,6 +6,6 @@
 
 ####source /usr2/share/gpu.sbatch
 
-# torchrun train.py --dataset_dir ~/dissertation-msc/datasets/nyuv2
+torchrun train.py --dataset_dir ~/dissertation-msc/datasets/nyuv2 --fusion_module SE
 
-torchrun train.py --dataset_dir ~/dissertation-msc/datasets/sunrgbd --dataset sunrgbd
+# torchrun train.py --dataset_dir ~/dissertation-msc/datasets/sunrgbd --dataset sunrgbd

@@ -48,7 +48,9 @@ def train(args):
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True, drop_last=True)
 
     # loading model
-    model = EISSegNet(dataset=args.dataset, upsampling='learned-3x3-zeropad')
+    model = EISSegNet(dataset=args.dataset, fusion_module=args.fusion_module, 
+                      rgb_encoder=args.rgb_encoder , depth_encoder=args.depth_encoder, 
+                      upsampling='learned-3x3-zeropad')
     if torch.cuda.device_count() > 1:
         print("Let's use", torch.cuda.device_count(), "GPUs!")
         model = torch.nn.DataParallel(model)
@@ -158,7 +160,8 @@ def train(args):
 
         if ((epoch+1) % 50) == 0:
             print(f'{args.last_ckpt}/ckp_{args.dataset}_{epoch+1}.pth has been saved.')
-            torch.save(model.module.state_dict(), f'{args.last_ckpt}/ckp_{args.dataset}_{epoch+1}.pth')
+            torch.save(model.module.state_dict(), 
+                       f'{args.last_ckpt}/ckp_{args.fusion_module}_{args.rgb_encoder}_{args.dataset}_{epoch+1}.pth')
 
         # best model
         if val_miou > best_miou:
@@ -188,5 +191,5 @@ if __name__ == '__main__':
     model, best_epoch, process = train(args)
     
     # save best model
-    torch.save(model, f'{args.last_ckpt}/ckp_{args.dataset}_bst_{best_epoch}.pth')
+    torch.save(model, f'{args.last_ckpt}/ckp_{args.fusion_module}_{args.rgb_encoder}_{args.dataset}_bst_{best_epoch}.pth')
     print(process)

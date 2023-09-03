@@ -20,7 +20,15 @@ class SegmentationArgumentParser(argparse.ArgumentParser):
                                'Images will be resized to this width.')
 
         # model
-        
+        self.add_argument('--rgb_encoder', default='convnext_b',
+                          choices=['convnext_b',
+                                   'convnext_t'])
+        self.add_argument('--depth_encoder', default='convnext_b',
+                          choices=['convnext_b',
+                                   'convnext_t'])
+        self.add_argument('--fusion_module', default='ECA',
+                          choices=['ECA',
+                                   'SE'])
 
         # train
         self.add_argument('--last_ckpt', default='./trained_models', type=str, metavar='PATH',
