@@ -10,6 +10,7 @@ import torchvision
 import matplotlib.pyplot as plt
 import time
 from src.evaluator import ConfusionMatrix, miou_pytorch
+from torch.profiler import profile, record_function, ProfilerActivity 
 
 NYUV2_LABELS = [(0, 0, 0),
                  (148, 65, 137), (255, 116, 69), (86, 156, 137),
@@ -72,6 +73,15 @@ def inference(args):
     miou = miou_pytorch(confusion_matrices)
 
     with torch.no_grad():
+
+        # profiler
+        with open(f'profiler-cuda.out', 'w') as f:
+            print(f"device: {device}\n", file=f)
+        with profile(activities=[ProfilerActivity.CUDA], profile_memory=True) as prof:
+            model(torch.randn(1, 3, 480, 640).to(device), torch.randn(1, 1, 480, 640).to(device))
+        with open(f'profiler-cuda.out', 'a') as f:
+            print(prof.key_averages(), file=f)
+
         img_dir_test 
         mark = round(time.time())
         for i, (rgb_path, depth_path, label_path) in enumerate(zip(img_dir_test, depth_dir_test, label_dir_test)):
@@ -134,7 +144,7 @@ def inference(args):
             # save result to args.results_dir
             fig, axs = plt.subplots(1, 4, figsize=( 16, 4))
             [ax.set_axis_off() for ax in axs.ravel()]
-            axs[0].imshow(rgb_img)
+            axs[0].imshow(rgb_img.astype('uint8'))
             axs[1].imshow(depth_img, cmap='gray')
             axs[2].imshow(label_orig, cmap='gray')
             axs[3].imshow(output)
