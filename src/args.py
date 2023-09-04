@@ -26,6 +26,7 @@ class SegmentationArgumentParser(argparse.ArgumentParser):
         self.add_argument('--depth_encoder', default='convnext_b',
                           choices=['convnext_b',
                                    'convnext_t'])
+        self.add_argument('--context_module', type=int, default=1)
         self.add_argument('--fusion_module', default='ECA',
                           choices=['ECA',
                                    'SE'])

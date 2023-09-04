@@ -14,6 +14,7 @@ class EISSegNet(nn.Module):
                  dataset='nyuv2',
                  rgb_encoder='convnext_b',
                  depth_encoder='convnext_b',
+                 context_module=1,
                  fusion_module='ECA',
                  pretrained=True,
                  upsampling='bilinear'):
@@ -34,11 +35,12 @@ class EISSegNet(nn.Module):
             depth_encoder: encoder for depth image, 
                            choices: convnext_t, convnext_b, 
                            default: convnext_b :see convnext.py
+            context_module: if using pretrained context_module,
+                            choices: 1: using, 0: not using
             fusion_module: fusion block in order to fuse the features of rgb and depth images, 
                            choices: SEBlock, ECABlock :see fusion.py
             pretrained: if using pretrained convnext model, 
                         choices: True: using, False: not using, if using pretrained model, the model will be download at pytorch .cache dirtory :see convnet.py
-            upsampling: 
         """
         
         # set the number of classes according to the dataset
@@ -115,20 +117,24 @@ class EISSegNet(nn.Module):
         self.skip_layer3 = nn.Sequential(*layers_skip3)
 
         # context module
-        if 'learned-3x3' in upsampling:
-            upsampling_context_module = 'nearest'
+        self.is_context_module = context_module
+        if self.is_context_module == 1:
+            if 'learned-3x3' in upsampling:
+                upsampling_context_module = 'nearest'
+            else:
+                upsampling_context_module = upsampling
+            self.context_module, channels_after_context_module = \
+                get_context_module(
+                    'ppm',
+                    self.rgb_encoder.down_32_channels_out,
+                    self.channels_decoder[0],
+                    input_size=(height // 32, width // 32),
+                    activation=nn.ReLU(inplace=True),
+                    upsampling_mode=upsampling_context_module
+                )
         else:
-            upsampling_context_module = upsampling
-        self.context_module, channels_after_context_module = \
-            get_context_module(
-                'ppm',
-                self.rgb_encoder.down_32_channels_out,
-                self.channels_decoder[0],
-                input_size=(height // 32, width // 32),
-                activation=nn.ReLU(inplace=True),
-                upsampling_mode=upsampling_context_module
-            )
-        
+            channels_after_context_module = self.channels_decoder[2]
+
         # decoder
         self.decoder = Decoder(
             channels_in=channels_after_context_module,
@@ -169,8 +175,10 @@ class EISSegNet(nn.Module):
         fusion = self.layer4_fusion(rgb, depth)
         
         # context module
-        out = self.context_module(fusion)
-
+        if self.is_context_module == 1:
+            out = self.context_module(fusion)
+        else:
+            out = fusion
         # decoder
         out = self.decoder(enc_outs=[out, skip3, skip2, skip1])
 

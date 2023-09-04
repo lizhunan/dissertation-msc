@@ -166,3 +166,5 @@ datasets/rgbd
 datasets/sunrgbd
 *.out
 results/*.png
+*.onnx
+results

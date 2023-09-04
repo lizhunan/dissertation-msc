@@ -50,8 +50,10 @@ else:
 def inference(args):
     
     # loading model and checkpoint
-    model = EISSegNet(dataset=args.dataset, upsampling='learned-3x3-zeropad')
-    model.load_state_dict(torch.load(args.ckpt_path))
+    model = EISSegNet(dataset=args.dataset, fusion_module=args.fusion_module, context_module=args.context_module,
+                      rgb_encoder=args.rgb_encoder , depth_encoder=args.depth_encoder, 
+                      upsampling='learned-3x3-zeropad')
+    model.load_state_dict(torch.load(args.ckpt_path, map_location=device), strict=False)
     print('Loaded checkpoint from {}'.format(args.ckpt_path))
 
     model.eval()
@@ -68,19 +70,15 @@ def inference(args):
     depth_dir_test = depth_dir_test[:args.num_samples]
     label_dir_test = label_dir_test[:args.num_samples]
 
-    # loading confusion matrix
-    confusion_matrices = ConfusionMatrix(num_classes)
-    miou = miou_pytorch(confusion_matrices)
-
     with torch.no_grad():
 
         # profiler
-        with open(f'profiler-cuda.out', 'w') as f:
-            print(f"device: {device}\n", file=f)
-        with profile(activities=[ProfilerActivity.CUDA], profile_memory=True) as prof:
-            model(torch.randn(1, 3, 480, 640).to(device), torch.randn(1, 1, 480, 640).to(device))
-        with open(f'profiler-cuda.out', 'a') as f:
-            print(prof.key_averages(), file=f)
+        # with open(f'profiler-cuda.out', 'w') as f:
+        #     print(f"device: {device}\n", file=f)
+        # with profile(activities=[ProfilerActivity.CUDA], profile_memory=True) as prof:
+        #     model(torch.randn(1, 3, 480, 640).to(device), torch.randn(1, 1, 480, 640).to(device))
+        # with open(f'profiler-cuda.out', 'a') as f:
+        #     print(prof.key_averages(), file=f)
 
         img_dir_test 
         mark = round(time.time())
@@ -117,7 +115,7 @@ def inference(args):
             # to tensor
             rgb = rgb.to(device).unsqueeze_(0)
             depth = depth.to(device).unsqueeze_(0)
-            label_miou = torch.from_numpy(label_orig).float().to(device).unsqueeze_(0)
+            label = torch.from_numpy(label_orig).float().to(device).unsqueeze_(0)
 
             start = time.time()
             pred = model(rgb, depth)
@@ -130,16 +128,14 @@ def inference(args):
                 raise NotImplementedError(f'Only nyuv2 or sunrgbd are supported for rgb encoder. Got {args.dataset}')
 
             # computing miou
-            pred_miou = torch.argmax(pred, dim=1)
-            mask = label_miou > 0
-            label_miou = torch.masked_select(label_miou.long(), mask)
-            pred_miou = torch.masked_select(pred_miou, mask.to(device))
-            label_miou -= 1
-            pred_miou = pred_miou.cpu().numpy()
-            label_miou = label_miou.cpu().numpy()
-            confusion_matrices.update(torch.from_numpy(label_miou), torch.from_numpy(pred_miou))
-            val_miou = miou.compute().data.numpy()
-            confusion_matrices.reset()
+            mask = label > 0
+            pred = torch.argmax(pred, dim=1)
+            label = torch.masked_select(label, mask)
+            pred = torch.masked_select(pred, mask)
+            label -= 1
+            pred = pred.cpu().numpy()
+            label = label.cpu().numpy()
+            mIoU = _compute_iou(pred, label, num_classes)
 
             # save result to args.results_dir
             fig, axs = plt.subplots(1, 4, figsize=( 16, 4))
@@ -152,8 +148,23 @@ def inference(args):
             axs[1].set_title('Depth Image')
             axs[2].set_title('Label Original')
             axs[3].set_title('Prediction')
-            fig.suptitle(f'Result on {args.dataset}(mIoU: {val_miou:0.4f}, Duration: {end:0.4f}s, FPS: {1/end:0.4f})', fontsize=16)
+            fig.suptitle(f'Result on {args.dataset}(mIoU: {mIoU:0.4f}, Duration: {end:0.4f}s, FPS: {1/end:0.4f})', fontsize=16)
             plt.savefig(os.path.join(args.results_dir, f'result_{args.dataset}_{mark}_{i+1}.png'), dpi=150)
+
+def _compute_iou(pred, label, num_classes):
+    iou_list = []
+    for i in range(num_classes):
+        # Check if the class exists in the ground truth label
+        if np.sum(label == i) == 0:
+            continue
+        intersection = np.sum((pred == i) & (label == i))
+        union = np.sum((pred == i) | (label == i))
+        if union == 0:
+            iou_list.append(np.nan) 
+        else:
+            iou_list.append(intersection / union)
+    miou = np.nanmean(iou_list)
+    return miou
 
 def _color_label(label, mask):
     h, w = label.shape[1:3]

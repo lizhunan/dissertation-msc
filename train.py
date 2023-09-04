@@ -48,7 +48,7 @@ def train(args):
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True, drop_last=True)
 
     # loading model
-    model = EISSegNet(dataset=args.dataset, fusion_module=args.fusion_module, 
+    model = EISSegNet(dataset=args.dataset, fusion_module=args.fusion_module, context_module=args.context_module,
                       rgb_encoder=args.rgb_encoder , depth_encoder=args.depth_encoder, 
                       upsampling='learned-3x3-zeropad')
     if torch.cuda.device_count() > 1:
