@@ -1,11 +1,13 @@
-# dissertation-msc
+# Efficient Indoor Scene Segmentation Network(EISSegNet)
 
-Efficient Indoor Scene Segmentation Network(EISSegNet)
+This is my Msc thesis named Efficient Indoor Scene Segmentation Network(EISSegNet), which is a semantic segmentation model for RGB-D images. The proposed model uses a CNN-based encoder-decoder architecture. Compared with the model based on Transformer architecture, the proposed model takes up less memory and has faster inference speed.
 
 <p align="lift">
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-4caf50.svg" alt="License"></a>
 </a>
 </p>
+
+![img](figure/result_nyuv2.png)
 
 ## Setup
 
@@ -51,7 +53,7 @@ based on sunrgb-d: https://drive.google.com/file/d/1JiZ-iIvCo_whEnWVAPIvNwRnzuFI
 
 ## Training
 
-Using `train.py` to train model. See the [`src/args`](src/args) for default parameters. The model file after training is stored in `trained_models`
+Using `train.py` to train model. See the [`src/args.py`](src/args.py) for default parameters. The model file after training is stored in `trained_models`
 
 Example:
 
